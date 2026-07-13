@@ -7,10 +7,6 @@
 <meta name="apple-mobile-web-app-capable" content="yes" />
 <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent" />
 <meta name="apple-mobile-web-app-title" content="Life Management" />
-<link rel="manifest" href="./manifest.json" />
-<link rel="apple-touch-icon" href="./icon-192.png" />
-<link rel="icon" type="image/png" sizes="192x192" href="./icon-192.png" />
-<link rel="icon" type="image/png" sizes="512x512" href="./icon-512.png" />
 <meta name="theme-color" content="#00B14F" />
 <title>Life Management — รายได้ Grab &amp; รายจ่ายส่วนตัว</title>
 <style>
@@ -404,6 +400,9 @@ const C = {
   green: "#00B14F",
   greenDeep: "#00953F",
   greenDim: "rgba(0,177,79,0.12)",
+  greenTip: "#16C767",
+  greenIncentive: "#4FD98A",
+  greenTurbo: "#82E6AD",
   red: "#E5484D",
   redDim: "rgba(229,72,77,0.12)",
   blue: "#2F80ED",
@@ -1687,6 +1686,10 @@ function GrabProfitMeter() {
     const insuranceCostSum = sum("insuranceCost");
     const miscCostSum = Math.max(totalCostSum - fuelCostSum - commissionCostSum - insuranceCostSum, 0);
     const profitSum = sum("profit");
+    const tipsSum = sum("tips");
+    const incentiveSum = sum("incentive");
+    const turboBonusSum = sum("turboBonus");
+    const baseProfitSum = Math.max(profitSum - tipsSum - incentiveSum - turboBonusSum, 0);
     const distanceSum = sum("distanceKm");
     const tripSum = sum("tripCount");
     const turboSum = sum("turboCount");
@@ -1719,6 +1722,10 @@ function GrabProfitMeter() {
       insuranceCost: insuranceCostSum,
       otherCost: miscCostSum,
       profit: profitSum,
+      baseProfit: baseProfitSum,
+      tips: tipsSum,
+      incentive: incentiveSum,
+      turboBonus: turboBonusSum,
       distanceKm: distanceSum,
       tripCount: tripSum,
       turboCount: turboSum,
@@ -2361,9 +2368,21 @@ function GrabProfitMeter() {
       value: periodSummary.otherCost,
       color: C.red
     }, {
-      label: "กำไร",
-      value: Math.max(periodSummary.profit, 0),
+      label: "กำไรจากค่าโดยสาร",
+      value: periodSummary.baseProfit,
       color: C.green
+    }, {
+      label: "ทิป",
+      value: periodSummary.tips,
+      color: C.greenTip
+    }, {
+      label: "อินเซนทีฟ",
+      value: periodSummary.incentive,
+      color: C.greenIncentive
+    }, {
+      label: "โบนัสเทอร์โบ",
+      value: periodSummary.turboBonus,
+      color: C.greenTurbo
     }]
   })), React.createElement("div", {
     className: "mb-3 flex flex-wrap items-center justify-center gap-x-3 gap-y-1.5 text-[13px]",
@@ -2420,7 +2439,37 @@ function GrabProfitMeter() {
       background: C.green,
       display: "inline-block"
     }
-  }), "กำไร ", thb(Math.max(periodSummary.profit, 0)), " ฿")), React.createElement("div", {
+  }), "กำไรจากค่าโดยสาร ", thb(periodSummary.baseProfit), " ฿"), React.createElement("span", {
+    className: "flex items-center gap-1.5"
+  }, React.createElement("span", {
+    style: {
+      width: 8,
+      height: 8,
+      borderRadius: 9999,
+      background: C.greenTip,
+      display: "inline-block"
+    }
+  }), "ทิป ", thb(periodSummary.tips), " ฿"), React.createElement("span", {
+    className: "flex items-center gap-1.5"
+  }, React.createElement("span", {
+    style: {
+      width: 8,
+      height: 8,
+      borderRadius: 9999,
+      background: C.greenIncentive,
+      display: "inline-block"
+    }
+  }), "อินเซนทีฟ ", thb(periodSummary.incentive), " ฿"), React.createElement("span", {
+    className: "flex items-center gap-1.5"
+  }, React.createElement("span", {
+    style: {
+      width: 8,
+      height: 8,
+      borderRadius: 9999,
+      background: C.greenTurbo,
+      display: "inline-block"
+    }
+  }), "โบนัสเทอร์โบ ", thb(periodSummary.turboBonus), " ฿")), React.createElement("div", {
     className: "grid grid-cols-2 gap-2 text-center"
   }, React.createElement("div", {
     className: "rounded-lg py-2",
@@ -4683,16 +4732,6 @@ function GrabProfitMeter() {
 }
 const rootEl = document.getElementById("root");
 ReactDOM.createRoot(rootEl).render(React.createElement(GrabProfitMeter, null));
-</script>
-
-<script>
-  if ("serviceWorker" in navigator) {
-    window.addEventListener("load", function () {
-      navigator.serviceWorker.register("./service-worker.js").catch(function (err) {
-        console.error("Service worker registration failed:", err);
-      });
-    });
-  }
 </script>
 </body>
 </html>
