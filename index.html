@@ -1257,6 +1257,13 @@ function GrabProfitMeter() {
   const dailyExpReceiptInputRef = useRef(null);
   const [viewingReceipt, setViewingReceipt] = useState(null);
   const [dailyExpPeriod, setDailyExpPeriod] = useState("day");
+  const [dailyExpViewDate, setDailyExpViewDate] = useState(todayISO());
+  const dailyExpViewDateInputRef = useRef(null);
+  const shiftDailyExpViewDate = dir => {
+    const d = new Date(dailyExpViewDate + "T00:00:00");
+    if (dailyExpPeriod === "day") d.setDate(d.getDate() + dir);else if (dailyExpPeriod === "week") d.setDate(d.getDate() + dir * 7);else if (dailyExpPeriod === "month") d.setMonth(d.getMonth() + dir);
+    setDailyExpViewDate(toLocalISO(d));
+  };
   const [maintenanceRecords, setMaintenanceRecords] = useState([]);
   const [maintDate, setMaintDate] = useState(todayISO());
   const [maintType, setMaintType] = useState(MAINTENANCE_TYPES[0]);
@@ -1771,14 +1778,9 @@ function GrabProfitMeter() {
     return {
       weekTotalTurbo,
       grossBonus,
-      netBonus,
-      alreadyApplied: netBonus > 0 && turboBonus >= netBonus
+      netBonus
     };
-  }, [date, entries, sortedTiers, turboBonus]);
-  const applyMondayTierBonus = () => {
-    if (!mondayTierSuggestion || mondayTierSuggestion.netBonus <= 0) return;
-    setTurboBonus(prev => (prev || 0) + mondayTierSuggestion.netBonus);
-  };
+  }, [date, entries, sortedTiers]);
   const weekCountdown = useMemo(() => {
     const monday = new Date(mondayOf(todayISO()) + "T00:00:00");
     const nextMonday = new Date(monday);
@@ -2004,14 +2006,14 @@ function GrabProfitMeter() {
     let filteredExp = [];
     let filteredIncomeEntries = [];
     if (dailyExpPeriod === "day") {
-      filteredExp = dailyExpenses.filter(e => e.date === todayISO());
-      filteredIncomeEntries = entries.filter(e => e.date === todayISO());
+      filteredExp = dailyExpenses.filter(e => e.date === dailyExpViewDate);
+      filteredIncomeEntries = entries.filter(e => e.date === dailyExpViewDate);
     } else if (dailyExpPeriod === "week") {
-      const wk = mondayOf(todayISO());
+      const wk = mondayOf(dailyExpViewDate);
       filteredExp = dailyExpenses.filter(e => mondayOf(e.date) === wk);
       filteredIncomeEntries = entries.filter(e => mondayOf(e.date) === wk);
     } else if (dailyExpPeriod === "month") {
-      const m = todayISO().slice(0, 7);
+      const m = dailyExpViewDate.slice(0, 7);
       filteredExp = dailyExpenses.filter(e => e.date.slice(0, 7) === m);
       filteredIncomeEntries = entries.filter(e => e.date.slice(0, 7) === m);
     }
@@ -2034,7 +2036,31 @@ function GrabProfitMeter() {
       categoryRows,
       count: filteredExp.length
     };
-  }, [dailyExpenses, entries, dailyExpPeriod]);
+  }, [dailyExpenses, entries, dailyExpPeriod, dailyExpViewDate]);
+  const expenseForecast = useMemo(() => {
+    const sortedExp = [...dailyExpenses].sort((a, b) => b.date.localeCompare(a.date));
+    const recentDates = [...new Set(sortedExp.map(e => e.date))].slice(0, 7);
+    const avgDailyExpense = recentDates.length > 0 ? recentDates.reduce((sum, d) => sum + dailyExpenses.filter(e => e.date === d).reduce((a, e) => a + (e.amount || 0), 0), 0) / recentDates.length : 0;
+    const thisWeekMonday = mondayOf(todayISO());
+    const weekSoFar = dailyExpenses.filter(e => mondayOf(e.date) === thisWeekMonday).reduce((a, e) => a + (e.amount || 0), 0);
+    const daysLoggedThisWeek = new Set(dailyExpenses.filter(e => mondayOf(e.date) === thisWeekMonday).map(e => e.date)).size;
+    const daysRemainingThisWeek = Math.max(0, 7 - daysLoggedThisWeek);
+    const thisMonth = todayISO().slice(0, 7);
+    const monthSoFar = dailyExpenses.filter(e => e.date.slice(0, 7) === thisMonth).reduce((a, e) => a + (e.amount || 0), 0);
+    const daysLoggedThisMonth = new Set(dailyExpenses.filter(e => e.date.slice(0, 7) === thisMonth).map(e => e.date)).size;
+    const y = Number(thisMonth.slice(0, 4));
+    const m = Number(thisMonth.slice(5, 7));
+    const totalDaysInMonth = new Date(y, m, 0).getDate();
+    const daysRemainingThisMonth = Math.max(0, totalDaysInMonth - daysLoggedThisMonth);
+    return {
+      sampleSize: recentDates.length,
+      avgDailyExpense,
+      weekSoFar,
+      weekProjected: weekSoFar + avgDailyExpense * daysRemainingThisWeek,
+      monthSoFar,
+      monthProjected: monthSoFar + avgDailyExpense * daysRemainingThisMonth
+    };
+  }, [dailyExpenses]);
   const maintenanceSummary = useMemo(() => {
     const total = maintenanceRecords.reduce((a, r) => a + (r.cost || 0), 0);
     const totalKm = entries.reduce((a, e) => a + (e.distanceKm || 0), 0);
@@ -2577,25 +2603,11 @@ function GrabProfitMeter() {
     size: 14,
     color: C.amber
   }), "สัปดาห์ที่แล้วทำเทอร์โบครบ ", mondayTierSuggestion.weekTotalTurbo, " รอบ"), React.createElement("p", {
-    className: "mb-2.5 text-[12px] leading-relaxed",
+    className: "text-[12px] leading-relaxed",
     style: {
       color: "#92400E"
     }
-  }, "อินเซนทีฟที่ได้ ", thb(mondayTierSuggestion.grossBonus), " บาท หัก 3% (", thb(mondayTierSuggestion.grossBonus * TURBO_INCENTIVE_TAX_RATE), " บาท) เหลือรับจริง", " ", React.createElement("strong", null, thb(mondayTierSuggestion.netBonus), " บาท"), " — Grab จ่ายเงินก้อนนี้ในวันจันทร์ กดเพื่อรวมเข้า \"โบนัสเทอร์โบ\" ของวันนี้เลย"), mondayTierSuggestion.alreadyApplied ? React.createElement("div", {
-    className: "rounded-lg py-2 text-center text-xs font-medium",
-    style: {
-      background: C.greenDim,
-      color: C.greenDeep
-    }
-  }, "รวมเข้ารายได้แล้ว ✓") : React.createElement("button", {
-    onClick: applyMondayTierBonus,
-    className: "w-full rounded-lg py-2 text-xs font-semibold",
-    style: {
-      background: C.amber,
-      color: "#FFFFFF"
-    },
-    type: "button"
-  }, "เพิ่ม ", thb(mondayTierSuggestion.netBonus), " บาท เข้ารายได้วันนี้")), React.createElement("div", {
+  }, "ตามเป้าหมายที่ตั้งไว้ คาดว่าจะได้อินเซนทีฟ ", thb(mondayTierSuggestion.grossBonus), " บาท หัก 3% (", thb(mondayTierSuggestion.grossBonus * TURBO_INCENTIVE_TAX_RATE), " บาท) เหลือรับจริงประมาณ ", React.createElement("strong", null, thb(mondayTierSuggestion.netBonus), " บาท"), " — Grab จ่ายเงินก้อนนี้ในวันจันทร์ (แจ้งเตือนเฉยๆ ไม่ได้เติมเข้ารายได้ให้อัตโนมัติ)")), React.createElement("div", {
     className: "mb-3 flex flex-col gap-2.5"
   }, React.createElement(Field, {
     label: "รายได้ค่าโดยสาร",
@@ -4409,6 +4421,48 @@ function GrabProfitMeter() {
     },
     type: "button"
   }, p.label))), React.createElement("div", {
+    className: "mb-3 flex items-center justify-between gap-1 rounded-lg",
+    style: {
+      background: C.bgSoft
+    }
+  }, React.createElement("button", {
+    onClick: () => shiftDailyExpViewDate(-1),
+    className: "shrink-0 p-2.5",
+    "aria-label": "ก่อนหน้า",
+    type: "button"
+  }, React.createElement(Icon, {
+    name: "chevronLeft",
+    size: 16,
+    color: C.textMuted
+  })), React.createElement("button", {
+    onClick: () => dailyExpViewDateInputRef.current?.showPicker?.() ?? dailyExpViewDateInputRef.current?.click(),
+    className: "flex min-w-0 flex-1 items-center justify-center gap-1.5 overflow-hidden text-xs font-medium",
+    style: {
+      color: C.text
+    },
+    type: "button"
+  }, React.createElement(Icon, {
+    name: "calendar",
+    size: 13,
+    color: C.textMuted
+  }), React.createElement("span", {
+    className: "truncate"
+  }, periodLabel(dailyExpViewDate, dailyExpPeriod))), React.createElement("button", {
+    onClick: () => shiftDailyExpViewDate(1),
+    className: "shrink-0 p-2.5",
+    "aria-label": "ถัดไป",
+    type: "button"
+  }, React.createElement(Icon, {
+    name: "chevronRight",
+    size: 16,
+    color: C.textMuted
+  })), React.createElement("input", {
+    ref: dailyExpViewDateInputRef,
+    type: "date",
+    value: dailyExpViewDate,
+    onChange: e => setDailyExpViewDate(e.target.value),
+    className: "hidden"
+  })), React.createElement("div", {
     className: "mb-3 grid grid-cols-2 gap-3"
   }, React.createElement("div", null, React.createElement("div", {
     className: "mb-0.5 text-[12px]",
@@ -4459,7 +4513,81 @@ function GrabProfitMeter() {
     style: {
       color: dailyExpenseSummary.sufficient ? C.greenDeep : C.red
     }
-  }, dailyExpenseSummary.sufficient ? `เพียงพอ เหลือ ${thb(dailyExpenseSummary.surplus)} ฿` : `ยังไม่พอ ขาดอีก ${thb(Math.abs(dailyExpenseSummary.surplus))} ฿`)), dailyExpenseSummary.categoryRows.length > 0 && React.createElement("div", {
+  }, dailyExpenseSummary.sufficient ? `เพียงพอ เหลือ ${thb(dailyExpenseSummary.surplus)} ฿` : `ยังไม่พอ ขาดอีก ${thb(Math.abs(dailyExpenseSummary.surplus))} ฿`)), expenseForecast.sampleSize > 0 && React.createElement("div", {
+    className: "mt-4 rounded-xl p-3.5",
+    style: {
+      background: C.panel,
+      border: `1px solid ${C.hairline}`,
+      borderLeft: `3px solid ${C.blue}`
+    }
+  }, React.createElement("div", {
+    className: "mb-1 flex items-center gap-2 text-xs font-semibold",
+    style: {
+      color: C.text
+    }
+  }, React.createElement("span", {
+    className: "flex h-6 w-6 items-center justify-center rounded-full",
+    style: {
+      background: "rgba(47,128,237,0.12)"
+    }
+  }, React.createElement(Icon, {
+    name: "trendUp",
+    size: 13,
+    color: C.blue
+  })), "ประมาณการรายจ่าย"), React.createElement("p", {
+    className: "mb-3 text-[11px] leading-relaxed",
+    style: {
+      color: C.textFaint
+    }
+  }, "คาดการณ์จากค่าเฉลี่ย ", expenseForecast.sampleSize, " วันล่าสุดที่มีการบันทึกรายจ่าย"), React.createElement("div", {
+    className: "mb-3 rounded-lg py-2.5 text-center",
+    style: {
+      background: C.bgSoft
+    }
+  }, React.createElement("div", {
+    className: "text-[11px]",
+    style: {
+      color: C.textFaint
+    }
+  }, "ใช้จ่ายเฉลี่ย/วัน"), React.createElement("div", {
+    className: "text-lg font-bold",
+    style: {
+      color: C.text,
+      fontFamily: "'JetBrains Mono', monospace"
+    }
+  }, thb(expenseForecast.avgDailyExpense), " ฿")), React.createElement("div", {
+    className: "grid grid-cols-2 gap-2 text-center text-[11px]"
+  }, React.createElement("div", {
+    className: "rounded-lg py-2",
+    style: {
+      background: C.bgSoft
+    }
+  }, React.createElement("div", {
+    style: {
+      color: C.textFaint
+    }
+  }, "คาดว่าสัปดาห์นี้จะใช้"), React.createElement("div", {
+    className: "font-semibold",
+    style: {
+      color: C.text,
+      fontFamily: "'JetBrains Mono', monospace"
+    }
+  }, thb(expenseForecast.weekProjected), " ฿")), React.createElement("div", {
+    className: "rounded-lg py-2",
+    style: {
+      background: C.bgSoft
+    }
+  }, React.createElement("div", {
+    style: {
+      color: C.textFaint
+    }
+  }, "คาดว่าเดือนนี้จะใช้"), React.createElement("div", {
+    className: "font-semibold",
+    style: {
+      color: C.text,
+      fontFamily: "'JetBrains Mono', monospace"
+    }
+  }, thb(expenseForecast.monthProjected), " ฿")))), dailyExpenseSummary.categoryRows.length > 0 && React.createElement("div", {
     className: "mt-4 rounded-xl p-3.5",
     style: {
       background: C.panel,
