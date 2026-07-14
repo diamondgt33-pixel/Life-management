@@ -2330,7 +2330,7 @@ function GrabProfitMeter() {
   }, "ต้นทุนมากกว่ารายได้"))), React.createElement("div", {
     className: "mb-3"
   }, React.createElement("div", {
-    className: "mb-1.5 flex items-center justify-between"
+    className: "mb-2 flex items-center justify-between"
   }, React.createElement("span", {
     className: "text-[12px] font-semibold",
     style: {
@@ -2343,16 +2343,21 @@ function GrabProfitMeter() {
       color: C.green,
       fontFamily: "'JetBrains Mono', monospace"
     }
-  }, "กำไร ", Math.max(0, Math.round((1 - periodSummary.ratio) * 100)), "%")), React.createElement(StackedBar, {
-    height: 42,
+  }, "กำไร ", Math.max(0, Math.round((1 - periodSummary.ratio) * 100)), "%")), React.createElement("div", {
+    className: "flex justify-center"
+  }, React.createElement("div", {
+    style: {
+      position: "relative",
+      width: 168,
+      height: 168
+    }
+  }, React.createElement(DonutChart, {
+    size: 168,
+    thickness: 24,
     segments: [{
       label: "ค่าน้ำมัน",
       value: periodSummary.fuelCost,
       color: C.amber
-    }, {
-      label: "ค่าคอมมิชชั่น",
-      value: periodSummary.commissionCost,
-      color: C.purple
     }, {
       label: "ค่าประกัน",
       value: periodSummary.insuranceCost,
@@ -2378,7 +2383,28 @@ function GrabProfitMeter() {
       value: periodSummary.turboBonus,
       color: C.greenTurbo
     }]
-  })), React.createElement("div", {
+  }), React.createElement("div", {
+    style: {
+      position: "absolute",
+      inset: 0,
+      display: "flex",
+      flexDirection: "column",
+      alignItems: "center",
+      justifyContent: "center"
+    }
+  }, React.createElement("span", {
+    style: {
+      fontSize: "10px",
+      color: C.textFaint
+    }
+  }, "กำไรรวม"), React.createElement("span", {
+    style: {
+      fontSize: "17px",
+      fontWeight: 700,
+      color: C.text,
+      fontFamily: "'JetBrains Mono', monospace"
+    }
+  }, thb(periodSummary.profit), " ฿"))))), React.createElement("div", {
     className: "mb-3 flex flex-wrap items-center justify-center gap-x-3 gap-y-1.5 text-[13px]",
     style: {
       color: C.textMuted
@@ -2394,16 +2420,6 @@ function GrabProfitMeter() {
       display: "inline-block"
     }
   }), "ค่าน้ำมัน ", thb(periodSummary.fuelCost), " ฿"), React.createElement("span", {
-    className: "flex items-center gap-1.5"
-  }, React.createElement("span", {
-    style: {
-      width: 8,
-      height: 8,
-      borderRadius: 9999,
-      background: C.purple,
-      display: "inline-block"
-    }
-  }), "คอมมิชชั่น ", thb(periodSummary.commissionCost), " ฿"), React.createElement("span", {
     className: "flex items-center gap-1.5"
   }, React.createElement("span", {
     style: {
