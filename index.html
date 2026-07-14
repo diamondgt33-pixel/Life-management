@@ -1090,8 +1090,8 @@ function MiniBarChart({
   const minV = Math.min(0, ...values);
   const hasNeg = minV < 0;
   const range = Math.max(maxV, Math.abs(minV), 1);
-  const unitW = 44;
-  const barW = 18;
+  const unitW = 34;
+  const barW = 26;
   const chartH = 130;
   const topPad = 22;
   const bottomPad = hasNeg ? 22 : 0;
@@ -1117,7 +1117,6 @@ function MiniBarChart({
       label: d.label
     };
   });
-  const polylinePoints = points.map(p => `${p.x},${p.y}`).join(" ");
   return React.createElement("div", {
     className: "overflow-x-auto pb-1",
     style: {
@@ -1163,22 +1162,7 @@ function MiniBarChart({
       fontSize: "9",
       fill: C.textFaint
     }, p.label));
-  }), React.createElement("polyline", {
-    points: polylinePoints,
-    fill: "none",
-    stroke: C.text,
-    strokeWidth: "1.75",
-    strokeLinejoin: "round",
-    strokeLinecap: "round",
-    opacity: "0.55"
-  }), points.map((p, i) => React.createElement("circle", {
-    key: i,
-    cx: p.x,
-    cy: p.y,
-    r: "2.75",
-    fill: C.text,
-    opacity: "0.75"
-  }))));
+  })));
 }
 function PctBadge({
   value
