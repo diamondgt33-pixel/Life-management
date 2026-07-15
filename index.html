@@ -1338,6 +1338,34 @@ function GrabProfitMeter() {
   }, [loaded]);
   useEffect(() => {
     if (!loaded) return;
+    setEntries(prevEntries => {
+      let changed = false;
+      const updated = prevEntries.map(e => {
+        if (e.incentiveTax !== undefined) return e;
+        changed = true;
+        const tax = Math.round((e.incentive || 0) * 0.03 * 100) / 100;
+        return {
+          ...e,
+          incentiveTax: tax,
+          totalCost: Math.round(((e.totalCost || 0) + tax) * 100) / 100,
+          profit: Math.round(((e.profit || 0) - tax) * 100) / 100
+        };
+      });
+      if (changed) {
+        (async () => {
+          try {
+            await window.storage.set("daily-entries", JSON.stringify(updated), false);
+          } catch (err) {
+            console.error("Retroactive incentive-tax migration failed", err);
+          }
+        })();
+        return updated;
+      }
+      return prevEntries;
+    });
+  }, [loaded]);
+  useEffect(() => {
+    if (!loaded) return;
     (async () => {
       try {
         await window.storage.set("settings", JSON.stringify({
@@ -1402,7 +1430,9 @@ function GrabProfitMeter() {
   }, [date, loaded]);
   const commissionCost = 0;
   const insuranceCost = income > 0 ? insuranceCostPerDay || 0 : 0;
-  const totalCost = fuelCost + commissionCost + (otherCost || 0) + insuranceCost;
+  const INCENTIVE_TAX_RATE = 0.03;
+  const incentiveTax = Math.round((incentive || 0) * INCENTIVE_TAX_RATE * 100) / 100;
+  const totalCost = fuelCost + commissionCost + (otherCost || 0) + insuranceCost + incentiveTax;
   const totalIncome = income + (tips || 0) + (incentive || 0) + (turboBonus || 0);
   const profit = totalIncome - totalCost;
   const costRatio = totalIncome > 0 ? totalCost / totalIncome : 0;
@@ -1422,6 +1452,7 @@ function GrabProfitMeter() {
       otherLabel,
       commissionCost,
       insuranceCost,
+      incentiveTax,
       totalCost,
       totalIncome,
       profit
@@ -1669,12 +1700,13 @@ function GrabProfitMeter() {
     const fuelCostSum = sum("fuelCost");
     const commissionCostSum = sum("commissionCost");
     const insuranceCostSum = sum("insuranceCost");
-    const miscCostSum = Math.max(totalCostSum - fuelCostSum - commissionCostSum - insuranceCostSum, 0);
+    const incentiveTaxSum = sum("incentiveTax");
+    const miscCostSum = Math.max(totalCostSum - fuelCostSum - commissionCostSum - insuranceCostSum - incentiveTaxSum, 0);
     const profitSum = sum("profit");
     const tipsSum = sum("tips");
     const incentiveSum = sum("incentive");
     const turboBonusSum = sum("turboBonus");
-    const baseProfitSum = Math.max(profitSum - tipsSum - incentiveSum - turboBonusSum, 0);
+    const baseProfitSum = Math.max(profitSum - tipsSum - (incentiveSum - incentiveTaxSum) - turboBonusSum, 0);
     const distanceSum = sum("distanceKm");
     const tripSum = sum("tripCount");
     const turboSum = sum("turboCount");
@@ -1705,6 +1737,7 @@ function GrabProfitMeter() {
       fuelCost: fuelCostSum,
       commissionCost: commissionCostSum,
       insuranceCost: insuranceCostSum,
+      incentiveTax: incentiveTaxSum,
       otherCost: miscCostSum,
       profit: profitSum,
       baseProfit: baseProfitSum,
@@ -2373,6 +2406,10 @@ function GrabProfitMeter() {
       value: periodSummary.insuranceCost,
       color: C.blue
     }, {
+      label: "ภาษีอินเซนทีฟ 3%",
+      value: periodSummary.incentiveTax,
+      color: C.purple
+    }, {
       label: "ค่าใช้จ่ายอื่น",
       value: periodSummary.otherCost,
       color: C.red
@@ -2440,6 +2477,16 @@ function GrabProfitMeter() {
       display: "inline-block"
     }
   }), "ประกัน ", thb(periodSummary.insuranceCost), " ฿"), React.createElement("span", {
+    className: "flex items-center gap-1.5"
+  }, React.createElement("span", {
+    style: {
+      width: 8,
+      height: 8,
+      borderRadius: 9999,
+      background: C.purple,
+      display: "inline-block"
+    }
+  }), "ภาษีอินเซนทีฟ 3% ", thb(periodSummary.incentiveTax), " ฿"), React.createElement("span", {
     className: "flex items-center gap-1.5"
   }, React.createElement("span", {
     style: {
@@ -2635,7 +2682,12 @@ function GrabProfitMeter() {
     value: turboBonus,
     onChange: setTurboBonus,
     placeholder: "0"
-  }))), React.createElement("div", {
+  })), incentive > 0 && React.createElement("p", {
+    className: "text-[11px] leading-relaxed",
+    style: {
+      color: C.textFaint
+    }
+  }, "หักภาษี ณ ที่จ่าย 3% จากอินเซนทีฟอัตโนมัติ (", thb(incentiveTax), " บาท) — เหลือรับจริงประมาณ ", thb(incentive - incentiveTax), " บาท")), React.createElement("div", {
     className: "rounded-xl p-3.5 mb-3",
     style: {
       background: C.panel,
