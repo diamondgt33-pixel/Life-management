@@ -454,6 +454,12 @@ const monthLabelThaiLong = ym => {
     year: "numeric"
   });
 };
+const yearLabelThai = y => {
+  const d = new Date(`${y}-06-01T00:00:00`);
+  return d.toLocaleDateString("th-TH", {
+    year: "numeric"
+  });
+};
 const shiftMonth = (ym, dir) => {
   const d = new Date(ym + "-01T00:00:00");
   d.setMonth(d.getMonth() + dir);
@@ -1241,6 +1247,7 @@ function GrabProfitMeter() {
   const dailyExpReceiptInputRef = useRef(null);
   const [viewingReceipt, setViewingReceipt] = useState(null);
   const [dailyExpPeriod, setDailyExpPeriod] = useState("day");
+  const [expenseChartGranularity, setExpenseChartGranularity] = useState("daily");
   const [dailyExpViewDate, setDailyExpViewDate] = useState(todayISO());
   const dailyExpViewDateInputRef = useRef(null);
   const shiftDailyExpViewDate = dir => {
@@ -2078,6 +2085,51 @@ function GrabProfitMeter() {
       monthProjected: monthSoFar + avgDailyExpense * daysRemainingThisMonth
     };
   }, [dailyExpenses]);
+  const expenseChartData = useMemo(() => {
+    const sorted = [...dailyExpenses].sort((a, b) => a.date.localeCompare(b.date));
+    if (sorted.length === 0) return [];
+    if (expenseChartGranularity === "daily") {
+      const map = new Map();
+      sorted.forEach(e => {
+        map.set(e.date, (map.get(e.date) || 0) + (e.amount || 0));
+      });
+      return Array.from(map.entries()).sort((a, b) => a[0].localeCompare(b[0])).slice(-14).map(([key, value]) => ({
+        label: thaiDateShort(key),
+        value
+      }));
+    }
+    if (expenseChartGranularity === "weekly") {
+      const map = new Map();
+      sorted.forEach(e => {
+        const key = mondayOf(e.date);
+        map.set(key, (map.get(key) || 0) + (e.amount || 0));
+      });
+      return Array.from(map.entries()).sort((a, b) => a[0].localeCompare(b[0])).slice(-10).map(([key, value]) => ({
+        label: thaiDateShort(key),
+        value
+      }));
+    }
+    if (expenseChartGranularity === "monthly") {
+      const map = new Map();
+      sorted.forEach(e => {
+        const key = e.date.slice(0, 7);
+        map.set(key, (map.get(key) || 0) + (e.amount || 0));
+      });
+      return Array.from(map.entries()).sort((a, b) => a[0].localeCompare(b[0])).slice(-12).map(([key, value]) => ({
+        label: monthLabelThai(key),
+        value
+      }));
+    }
+    const map = new Map();
+    sorted.forEach(e => {
+      const key = e.date.slice(0, 4);
+      map.set(key, (map.get(key) || 0) + (e.amount || 0));
+    });
+    return Array.from(map.entries()).sort((a, b) => a[0].localeCompare(b[0])).slice(-6).map(([key, value]) => ({
+      label: yearLabelThai(key),
+      value
+    }));
+  }, [dailyExpenses, expenseChartGranularity]);
   const maintenanceSummary = useMemo(() => {
     const total = maintenanceRecords.reduce((a, r) => a + (r.cost || 0), 0);
     const totalKm = entries.reduce((a, e) => a + (e.distanceKm || 0), 0);
@@ -4664,7 +4716,62 @@ function GrabProfitMeter() {
         fontFamily: "'JetBrains Mono', monospace"
       }
     }, thb(r.amt), " ฿"));
-  }))), React.createElement("div", {
+  }))), dailyExpenses.length > 0 && React.createElement("div", {
+    className: "mt-4 rounded-xl p-3.5",
+    style: {
+      background: C.panel,
+      border: `1px solid ${C.hairline}`,
+      borderLeft: `3px solid ${C.purple}`
+    }
+  }, React.createElement("div", {
+    className: "mb-3 flex items-center gap-2 text-xs font-semibold",
+    style: {
+      color: C.text
+    }
+  }, React.createElement("span", {
+    className: "flex h-6 w-6 items-center justify-center rounded-full",
+    style: {
+      background: "rgba(139,92,246,0.12)"
+    }
+  }, React.createElement(Icon, {
+    name: "bar",
+    size: 13,
+    color: C.purple
+  })), "กราฟเทียบการใช้จ่าย"), React.createElement("div", {
+    className: "mb-3 flex gap-1.5"
+  }, [{
+    key: "daily",
+    label: "รายวัน"
+  }, {
+    key: "weekly",
+    label: "รายสัปดาห์"
+  }, {
+    key: "monthly",
+    label: "รายเดือน"
+  }, {
+    key: "yearly",
+    label: "รายปี"
+  }].map(g => React.createElement("button", {
+    key: g.key,
+    onClick: () => setExpenseChartGranularity(g.key),
+    className: "flex-1 rounded-lg py-1.5 text-[12px] font-medium transition-colors",
+    style: {
+      background: expenseChartGranularity === g.key ? C.purple : C.bgSoft,
+      color: expenseChartGranularity === g.key ? "#FFFFFF" : C.textMuted
+    },
+    type: "button"
+  }, g.label))), expenseChartData.length > 0 ? React.createElement(MiniBarChart, {
+    data: expenseChartData,
+    metric: {
+      color: C.purple
+    }
+  }) : React.createElement("div", {
+    className: "rounded-lg py-6 text-center text-xs",
+    style: {
+      background: C.bgSoft,
+      color: C.textFaint
+    }
+  }, "ยังไม่มีข้อมูลพอสำหรับช่วงเวลานี้")), React.createElement("div", {
     className: "mt-4 rounded-xl p-3.5",
     style: {
       background: C.panel,
