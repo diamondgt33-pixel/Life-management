@@ -1234,6 +1234,7 @@ function GrabProfitMeter() {
   const [nowTick, setNowTick] = useState(Date.now());
   const [dailyExpPeriod, setDailyExpPeriod] = useState("day");
   const [expenseChartGranularity, setExpenseChartGranularity] = useState("daily");
+  const [drivingChartGranularity, setDrivingChartGranularity] = useState("daily");
   const [dailyExpViewDate, setDailyExpViewDate] = useState(todayISO());
   const dailyExpViewDateInputRef = useRef(null);
   const shiftDailyExpViewDate = dir => {
@@ -2168,6 +2169,36 @@ function GrabProfitMeter() {
       value
     }));
   }, [dailyExpenses, expenseChartGranularity]);
+  const drivingHoursChartData = useMemo(() => {
+    const allDates = [...new Set(drivingSessions.map(s => s.date))].sort();
+    if (allDates.length === 0) return [];
+    if (drivingChartGranularity === "daily") {
+      return allDates.slice(-14).map(d => ({
+        label: thaiDateShort(d),
+        value: drivingMinutesForDate(d) / 60
+      }));
+    }
+    if (drivingChartGranularity === "weekly") {
+      const map = new Map();
+      allDates.forEach(d => {
+        const key = mondayOf(d);
+        map.set(key, (map.get(key) || 0) + drivingMinutesForDate(d) / 60);
+      });
+      return Array.from(map.entries()).sort((a, b) => a[0].localeCompare(b[0])).slice(-10).map(([key, value]) => ({
+        label: thaiDateShort(key),
+        value
+      }));
+    }
+    const map = new Map();
+    allDates.forEach(d => {
+      const key = d.slice(0, 7);
+      map.set(key, (map.get(key) || 0) + drivingMinutesForDate(d) / 60);
+    });
+    return Array.from(map.entries()).sort((a, b) => a[0].localeCompare(b[0])).slice(-12).map(([key, value]) => ({
+      label: monthLabelThai(key),
+      value
+    }));
+  }, [drivingSessions, drivingChartGranularity, nowTick]);
   const maintenanceSummary = useMemo(() => {
     const total = maintenanceRecords.reduce((a, r) => a + (r.cost || 0), 0);
     const totalKm = entries.reduce((a, e) => a + (e.distanceKm || 0), 0);
@@ -3490,7 +3521,59 @@ function GrabProfitMeter() {
         color: badge.color
       }
     }, badge.text));
-  }))), React.createElement("div", {
+  }))), drivingSessions.length > 0 && React.createElement("div", {
+    className: "mt-4 rounded-xl p-3.5",
+    style: {
+      background: C.panel,
+      border: `1px solid ${C.hairline}`,
+      borderLeft: `3px solid ${C.blue}`
+    }
+  }, React.createElement("div", {
+    className: "mb-3 flex items-center gap-2 text-xs font-semibold",
+    style: {
+      color: C.text
+    }
+  }, React.createElement("span", {
+    className: "flex h-6 w-6 items-center justify-center rounded-full",
+    style: {
+      background: "rgba(47,128,237,0.12)"
+    }
+  }, React.createElement(Icon, {
+    name: "clock",
+    size: 13,
+    color: C.blue
+  })), "กราฟชั่วโมงขับ (จากตัวจับเวลาจริง)"), React.createElement("div", {
+    className: "mb-3 flex gap-1.5"
+  }, [{
+    key: "daily",
+    label: "รายวัน"
+  }, {
+    key: "weekly",
+    label: "รายสัปดาห์"
+  }, {
+    key: "monthly",
+    label: "รายเดือน"
+  }].map(g => React.createElement("button", {
+    key: g.key,
+    onClick: () => setDrivingChartGranularity(g.key),
+    className: "flex-1 rounded-lg py-1.5 text-[12px] font-medium transition-colors",
+    style: {
+      background: drivingChartGranularity === g.key ? C.blue : C.bgSoft,
+      color: drivingChartGranularity === g.key ? "#FFFFFF" : C.textMuted
+    },
+    type: "button"
+  }, g.label))), drivingHoursChartData.length > 0 ? React.createElement(MiniBarChart, {
+    data: drivingHoursChartData,
+    metric: {
+      color: C.blue
+    }
+  }) : React.createElement("div", {
+    className: "rounded-lg py-6 text-center text-xs",
+    style: {
+      background: C.bgSoft,
+      color: C.textFaint
+    }
+  }, "ยังไม่มีข้อมูลพอสำหรับช่วงเวลานี้")), React.createElement("div", {
     className: "mt-4 rounded-xl p-3.5",
     style: {
       background: C.panel,
