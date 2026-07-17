@@ -21,8 +21,6 @@
   html, body { margin: 0; padding: 0; background: #F4F6F5; -webkit-tap-highlight-color: transparent; overscroll-behavior-y: none; }
   #root { min-height: 100vh; }
   .hidden { display: none; }
-  @keyframes rowIn { from { opacity: 0; transform: translateY(-4px); } to { opacity: 1; transform: translateY(0); } }
-  .row-in { animation: rowIn 0.25s ease-out; }
 </style>
 </head>
 <body>
@@ -418,15 +416,15 @@ window.storage = {
   }
 };
 const C = {
-  bg: "#F4F6F5",
-  bgSoft: "#F0F2F1",
-  panel: "#FFFFFF",
-  panelRaised: "#FFFFFF",
-  hairline: "rgba(15,23,20,0.08)",
-  hairlineStrong: "rgba(15,23,20,0.16)",
-  text: "#14181A",
-  textMuted: "#6B7570",
-  textFaint: "#9AA39D",
+  bg: "var(--c-bg)",
+  bgSoft: "var(--c-bg-soft)",
+  panel: "var(--c-panel)",
+  panelRaised: "var(--c-panel-raised)",
+  hairline: "var(--c-hairline)",
+  hairlineStrong: "var(--c-hairline-strong)",
+  text: "var(--c-text)",
+  textMuted: "var(--c-text-muted)",
+  textFaint: "var(--c-text-faint)",
   amber: "#F59E0B",
   amberDim: "rgba(245,158,11,0.12)",
   green: "#00B14F",
@@ -1279,6 +1277,8 @@ function GrabProfitMeter() {
   const [viewingReceipt, setViewingReceipt] = useState(null);
   const [viewingDayDetail, setViewingDayDetail] = useState(null);
   const [drivingSessions, setDrivingSessions] = useState([]);
+  const [themeMode, setThemeMode] = useState("auto");
+  const [clockTick, setClockTick] = useState(Date.now());
   const [nowTick, setNowTick] = useState(Date.now());
   const [dailyExpPeriod, setDailyExpPeriod] = useState("day");
   const [expenseChartGranularity, setExpenseChartGranularity] = useState("daily");
@@ -1346,6 +1346,7 @@ function GrabProfitMeter() {
         if (s && s.value) {
           const parsed = JSON.parse(s.value);
           if (typeof parsed.insuranceCostPerDay === "number") setInsuranceCostPerDay(parsed.insuranceCostPerDay);
+          if (parsed.themeMode) setThemeMode(parsed.themeMode);
           if (Array.isArray(parsed.turboTiers) && parsed.turboTiers.length > 0) {
             setTurboTiers(parsed.turboTiers);
           }
@@ -1416,11 +1417,12 @@ function GrabProfitMeter() {
       try {
         await window.storage.set("settings", JSON.stringify({
           turboTiers,
-          insuranceCostPerDay
+          insuranceCostPerDay,
+          themeMode
         }), false);
       } catch (e) {}
     })();
-  }, [turboTiers, insuranceCostPerDay, loaded]);
+  }, [turboTiers, insuranceCostPerDay, themeMode, loaded]);
   useEffect(() => {
     if (!loaded) return;
     (async () => {
@@ -1429,6 +1431,19 @@ function GrabProfitMeter() {
       } catch (e) {}
     })();
   }, [fixedExpenses, loaded]);
+  const isDarkMode = useMemo(() => {
+    if (themeMode === "dark") return true;
+    if (themeMode === "light") return false;
+    const hour = new Date(clockTick).getHours();
+    return hour >= 18 || hour < 6;
+  }, [themeMode, clockTick]);
+  useEffect(() => {
+    const t = setInterval(() => setClockTick(Date.now()), 60000);
+    return () => clearInterval(t);
+  }, []);
+  const cycleThemeMode = () => {
+    setThemeMode(m => m === "auto" ? "light" : m === "light" ? "dark" : "auto");
+  };
   const activeDrivingSession = drivingSessions.find(s => s.endTime === null) || null;
   useEffect(() => {
     if (!activeDrivingSession) return;
@@ -1557,7 +1572,8 @@ function GrabProfitMeter() {
       await window.storage.set("daily-entries", JSON.stringify(next), false);
       await window.storage.set("settings", JSON.stringify({
         turboTiers,
-        insuranceCostPerDay
+        insuranceCostPerDay,
+        themeMode
       }), false);
       setSaveFlash(true);
       setTimeout(() => setSaveFlash(false), 1400);
@@ -2337,9 +2353,38 @@ function GrabProfitMeter() {
   }, [entries, chartGranularity, chartMetric]);
   const activeMetric = METRICS.find(m => m.key === chartMetric);
   const isExisting = entries.some(e => e.date === date);
+  const themeVars = isDarkMode ? {
+    "--c-bg": "#12161A",
+    "--c-bg-soft": "#1B2126",
+    "--c-panel": "#1E252B",
+    "--c-panel-raised": "#242C33",
+    "--c-hairline": "rgba(255,255,255,0.09)",
+    "--c-hairline-strong": "rgba(255,255,255,0.18)",
+    "--c-text": "#F0F2F1",
+    "--c-text-muted": "#A8B0AC",
+    "--c-text-faint": "#6E7A74",
+    "--c-hero-green": "linear-gradient(165deg, #1E252B 0%, #16291E 100%)",
+    "--c-hero-amber": "linear-gradient(165deg, #1E252B 0%, #2B2416 100%)",
+    "--c-hero-red": "linear-gradient(165deg, #1E252B 0%, #2B1B1C 100%)"
+  } : {
+    "--c-bg": "#F4F6F5",
+    "--c-bg-soft": "#F0F2F1",
+    "--c-panel": "#FFFFFF",
+    "--c-panel-raised": "#FFFFFF",
+    "--c-hairline": "rgba(15,23,20,0.08)",
+    "--c-hairline-strong": "rgba(15,23,20,0.16)",
+    "--c-text": "#14181A",
+    "--c-text-muted": "#6B7570",
+    "--c-text-faint": "#9AA39D",
+    "--c-hero-green": "linear-gradient(165deg, #FFFFFF 0%, #EBFAF1 100%)",
+    "--c-hero-amber": "linear-gradient(165deg, #FFFFFF 0%, #FFF8EB 100%)",
+    "--c-hero-red": "linear-gradient(165deg, #FFFFFF 0%, #FDEEEC 100%)"
+  };
   return React.createElement("div", {
     className: "min-h-screen w-full flex justify-center",
+    "data-theme": isDarkMode ? "dark" : "light",
     style: {
+      ...themeVars,
       background: C.bg,
       fontFamily: "'Space Grotesk', sans-serif"
     }
@@ -2348,7 +2393,7 @@ function GrabProfitMeter() {
         input[type=number]::-webkit-inner-spin-button,
         input[type=number]::-webkit-outer-spin-button { -webkit-appearance: none; margin: 0; }
         input[type=number] { -moz-appearance: textfield; }
-        input[type=date] { color-scheme: light; }
+        input[type=date] { color-scheme: ${isDarkMode ? "dark" : "light"}; }
         @keyframes fadeSlideIn { from { opacity: 0; transform: translateY(4px);} to { opacity: 1; transform: translateY(0);} }
         .row-in { animation: fadeSlideIn 0.25s ease; }
         ::selection { background: ${C.greenDim}; }
@@ -2367,13 +2412,25 @@ function GrabProfitMeter() {
       color: C.textMuted
     }
   }, "จัดการรายได้ Grab และรายจ่ายส่วนตัว")), React.createElement("div", {
+    className: "flex items-center gap-2"
+  }, React.createElement("button", {
+    onClick: cycleThemeMode,
+    className: "flex h-9 w-9 shrink-0 items-center justify-center rounded-full text-base",
+    style: {
+      background: C.panel,
+      border: `1px solid ${C.hairline}`
+    },
+    type: "button",
+    "aria-label": "สลับธีม",
+    title: themeMode === "auto" ? "อัตโนมัติตามเวลา" : themeMode === "dark" ? "โหมดมืด" : "โหมดสว่าง"
+  }, themeMode === "auto" ? "🌗" : themeMode === "dark" ? "🌙" : "☀️"), React.createElement("div", {
     className: "rounded-full px-3 py-1.5 text-[13px] font-medium",
     style: {
       background: C.panel,
       color: C.textMuted,
       border: `1px solid ${C.hairline}`
     }
-  }, "บันทึกแล้ว ", stats.count, " วัน")), React.createElement("div", {
+  }, "บันทึกแล้ว ", stats.count, " วัน"))), React.createElement("div", {
     className: "mb-5 flex gap-1.5 rounded-xl p-1",
     style: {
       background: C.panel,
@@ -2476,7 +2533,7 @@ function GrabProfitMeter() {
   }, "เฉลี่ย ", thb(profit / (drivingMinutesForDate(todayISO()) / 60)), " บาท/ชั่วโมง (จากกำไรวันนี้)"))), React.createElement("div", {
     className: "rounded-xl p-3.5",
     style: {
-      background: "linear-gradient(165deg, #FFFFFF 0%, #EBFAF1 100%)",
+      background: "var(--c-hero-green)",
       border: `1px solid ${C.hairline}`,
       borderTop: `3px solid ${C.green}`,
       boxShadow: "0 6px 20px rgba(0,177,79,0.12), 0 2px 6px rgba(15,23,20,0.05)"
@@ -3815,7 +3872,7 @@ function GrabProfitMeter() {
   }, "ยังไม่มีรายการซ่อมบำรุง กด \"+ บันทึกรายการ\" เพื่อเริ่มบันทึก")), React.createElement("div", {
     className: "mt-4 rounded-xl p-3.5",
     style: {
-      background: "linear-gradient(165deg, #FFFFFF 0%, #FFF8EB 100%)",
+      background: "var(--c-hero-amber)",
       border: `1px solid ${C.hairline}`,
       borderTop: `3px solid ${C.amber}`,
       boxShadow: "0 6px 20px rgba(245,158,11,0.10)"
@@ -4537,7 +4594,7 @@ function GrabProfitMeter() {
   })))))))), activeTab === "expenses" && React.createElement(React.Fragment, null, React.createElement("div", {
     className: "rounded-xl p-3.5",
     style: {
-      background: "linear-gradient(165deg, #FFFFFF 0%, #EBFAF1 100%)",
+      background: "var(--c-hero-green)",
       border: `1px solid ${C.hairline}`,
       borderTop: `3px solid ${C.green}`,
       boxShadow: "0 6px 20px rgba(0,177,79,0.12), 0 2px 6px rgba(15,23,20,0.05)"
@@ -4708,7 +4765,7 @@ function GrabProfitMeter() {
   }, "+ เพิ่มรายการรายจ่าย"))), activeTab === "daily" && React.createElement(React.Fragment, null, React.createElement("div", {
     className: "rounded-xl p-3.5",
     style: {
-      background: dailyExpenseSummary.sufficient ? "linear-gradient(165deg, #FFFFFF 0%, #EBFAF1 100%)" : "linear-gradient(165deg, #FFFFFF 0%, #FDEEEC 100%)",
+      background: dailyExpenseSummary.sufficient ? "var(--c-hero-green)" : "var(--c-hero-red)",
       border: `1px solid ${C.hairline}`,
       borderTop: `3px solid ${dailyExpenseSummary.sufficient ? C.green : C.red}`,
       boxShadow: dailyExpenseSummary.sufficient ? "0 6px 20px rgba(0,177,79,0.12)" : "0 6px 20px rgba(229,72,77,0.12)"
