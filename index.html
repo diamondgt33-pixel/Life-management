@@ -1413,6 +1413,44 @@ function GrabProfitMeter() {
   }, [loaded]);
   useEffect(() => {
     if (!loaded) return;
+    setEntries(prevEntries => {
+      let changed = false;
+      const totalMaint = maintenanceRecords.reduce((a, r) => a + (r.cost || 0), 0);
+      const allDates = [...prevEntries.map(e => e.date), ...maintenanceRecords.map(r => r.date)];
+      let daysSpan = 1;
+      if (allDates.length > 0) {
+        const earliest = allDates.reduce((a, b) => a < b ? a : b);
+        const d1 = new Date(earliest + "T00:00:00");
+        const d2 = new Date(todayISO() + "T00:00:00");
+        daysSpan = Math.max(1, Math.round((d2 - d1) / 86400000) + 1);
+      }
+      const perDayRate = totalMaint / daysSpan;
+      const updated = prevEntries.map(e => {
+        if (e.maintenanceCost !== undefined) return e;
+        changed = true;
+        const cost = e.income > 0 ? Math.round(perDayRate * 100) / 100 : 0;
+        return {
+          ...e,
+          maintenanceCost: cost,
+          totalCost: Math.round(((e.totalCost || 0) + cost) * 100) / 100,
+          profit: Math.round(((e.profit || 0) - cost) * 100) / 100
+        };
+      });
+      if (changed) {
+        (async () => {
+          try {
+            await window.storage.set("daily-entries", JSON.stringify(updated), false);
+          } catch (err) {
+            console.error("Retroactive maintenance-cost migration failed", err);
+          }
+        })();
+        return updated;
+      }
+      return prevEntries;
+    });
+  }, [loaded]);
+  useEffect(() => {
+    if (!loaded) return;
     (async () => {
       try {
         await window.storage.set("settings", JSON.stringify({
@@ -1537,11 +1575,36 @@ function GrabProfitMeter() {
       setOtherLabel("");
     }
   }, [date, loaded]);
+  const maintenanceSummary = useMemo(() => {
+    const total = maintenanceRecords.reduce((a, r) => a + (r.cost || 0), 0);
+    const totalKm = entries.reduce((a, e) => a + (e.distanceKm || 0), 0);
+    const allDates = [...entries.map(e => e.date), ...maintenanceRecords.map(r => r.date)];
+    let daysSpan = 1;
+    if (allDates.length > 0) {
+      const earliest = allDates.reduce((a, b) => a < b ? a : b);
+      const d1 = new Date(earliest + "T00:00:00");
+      const d2 = new Date(todayISO() + "T00:00:00");
+      daysSpan = Math.max(1, Math.round((d2 - d1) / 86400000) + 1);
+    }
+    const byType = {};
+    maintenanceRecords.forEach(r => {
+      byType[r.type] = (byType[r.type] || 0) + (r.cost || 0);
+    });
+    return {
+      total,
+      count: maintenanceRecords.length,
+      perDay: total / daysSpan,
+      perKm: totalKm > 0 ? total / totalKm : 0,
+      byType,
+      hasKmData: totalKm > 0
+    };
+  }, [maintenanceRecords, entries]);
   const commissionCost = 0;
   const insuranceCost = income > 0 ? insuranceCostPerDay || 0 : 0;
   const INCENTIVE_TAX_RATE = 0.03;
   const incentiveTax = Math.round((incentive || 0) * INCENTIVE_TAX_RATE * 100) / 100;
-  const totalCost = fuelCost + commissionCost + (otherCost || 0) + insuranceCost + incentiveTax;
+  const maintenanceCostToday = income > 0 ? Math.round((maintenanceSummary.perDay || 0) * 100) / 100 : 0;
+  const totalCost = fuelCost + commissionCost + (otherCost || 0) + insuranceCost + incentiveTax + maintenanceCostToday;
   const totalIncome = income + (tips || 0) + (incentive || 0) + (turboBonus || 0);
   const profit = totalIncome - totalCost;
   const costRatio = totalIncome > 0 ? totalCost / totalIncome : 0;
@@ -1562,6 +1625,7 @@ function GrabProfitMeter() {
       commissionCost,
       insuranceCost,
       incentiveTax,
+      maintenanceCost: maintenanceCostToday,
       totalCost,
       totalIncome,
       profit
@@ -1811,7 +1875,8 @@ function GrabProfitMeter() {
     const commissionCostSum = sum("commissionCost");
     const insuranceCostSum = sum("insuranceCost");
     const incentiveTaxSum = sum("incentiveTax");
-    const miscCostSum = Math.max(totalCostSum - fuelCostSum - commissionCostSum - insuranceCostSum - incentiveTaxSum, 0);
+    const maintenanceCostSum = sum("maintenanceCost");
+    const miscCostSum = Math.max(totalCostSum - fuelCostSum - commissionCostSum - insuranceCostSum - incentiveTaxSum - maintenanceCostSum, 0);
     const profitSum = sum("profit");
     const tipsSum = sum("tips");
     const incentiveSum = sum("incentive");
@@ -1848,6 +1913,7 @@ function GrabProfitMeter() {
       commissionCost: commissionCostSum,
       insuranceCost: insuranceCostSum,
       incentiveTax: incentiveTaxSum,
+      maintenanceCost: maintenanceCostSum,
       otherCost: miscCostSum,
       profit: profitSum,
       baseProfit: baseProfitSum,
@@ -2263,30 +2329,6 @@ function GrabProfitMeter() {
       value
     }));
   }, [drivingSessions, drivingChartGranularity, nowTick]);
-  const maintenanceSummary = useMemo(() => {
-    const total = maintenanceRecords.reduce((a, r) => a + (r.cost || 0), 0);
-    const totalKm = entries.reduce((a, e) => a + (e.distanceKm || 0), 0);
-    const allDates = [...entries.map(e => e.date), ...maintenanceRecords.map(r => r.date)];
-    let daysSpan = 1;
-    if (allDates.length > 0) {
-      const earliest = allDates.reduce((a, b) => a < b ? a : b);
-      const d1 = new Date(earliest + "T00:00:00");
-      const d2 = new Date(todayISO() + "T00:00:00");
-      daysSpan = Math.max(1, Math.round((d2 - d1) / 86400000) + 1);
-    }
-    const byType = {};
-    maintenanceRecords.forEach(r => {
-      byType[r.type] = (byType[r.type] || 0) + (r.cost || 0);
-    });
-    return {
-      total,
-      count: maintenanceRecords.length,
-      perDay: total / daysSpan,
-      perKm: totalKm > 0 ? total / totalKm : 0,
-      byType,
-      hasKmData: totalKm > 0
-    };
-  }, [maintenanceRecords, entries]);
   const slotAnalysis = useMemo(() => {
     const map = {};
     TURBO_SLOTS.forEach(s => {
@@ -2706,6 +2748,10 @@ function GrabProfitMeter() {
       value: periodSummary.incentiveTax,
       color: C.purple
     }, {
+      label: "ค่าซ่อมบำรุง",
+      value: periodSummary.maintenanceCost,
+      color: C.pink
+    }, {
       label: "ค่าใช้จ่ายอื่น",
       value: periodSummary.otherCost,
       color: C.red
@@ -2783,6 +2829,16 @@ function GrabProfitMeter() {
       display: "inline-block"
     }
   }), "ภาษีอินเซนทีฟ 3% ", thb(periodSummary.incentiveTax), " ฿"), React.createElement("span", {
+    className: "flex items-center gap-1.5"
+  }, React.createElement("span", {
+    style: {
+      width: 8,
+      height: 8,
+      borderRadius: 9999,
+      background: C.pink,
+      display: "inline-block"
+    }
+  }), "ค่าซ่อมบำรุง ", thb(periodSummary.maintenanceCost), " ฿"), React.createElement("span", {
     className: "flex items-center gap-1.5"
   }, React.createElement("span", {
     style: {
@@ -3708,7 +3764,20 @@ function GrabProfitMeter() {
       color: C.green
     },
     type: "button"
-  }, showMaintForm ? "ปิด" : "+ บันทึกรายการ")), showMaintForm && React.createElement("div", {
+  }, showMaintForm ? "ปิด" : "+ บันทึกรายการ")), maintenanceSummary.total > 0 && React.createElement("p", {
+    className: "mb-3 text-[11px] leading-relaxed",
+    style: {
+      color: C.textFaint
+    }
+  }, "ระบบเฉลี่ยค่าซ่อมบำรุงทั้งหมด", " ", React.createElement("strong", {
+    style: {
+      color: C.text
+    }
+  }, thb(maintenanceSummary.total), " บาท"), " หารด้วยจำนวนวัน แล้วหักเป็นต้นทุนจริงวันละ", " ", React.createElement("strong", {
+    style: {
+      color: C.text
+    }
+  }, thb(maintenanceSummary.perDay), " บาท"), " อัตโนมัติทุกวันที่มีรายได้ (ตัวเลขนี้จะขยับขึ้นเรื่อยๆ ตามค่าเฉลี่ยล่าสุดเมื่อมีรายการซ่อมใหม่เข้ามา)"), showMaintForm && React.createElement("div", {
     className: "mb-3 flex flex-col gap-2.5 row-in"
   }, React.createElement("div", {
     className: "grid grid-cols-2 gap-2.5"
