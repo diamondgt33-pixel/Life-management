@@ -1749,6 +1749,15 @@ function GrabProfitMeter() {
   const exportData = () => {
     const payload = JSON.stringify({
       entries,
+      fixedExpenses,
+      dailyExpenses,
+      maintenanceRecords,
+      drivingSessions,
+      settings: {
+        turboTiers,
+        insuranceCostPerDay,
+        themeMode
+      },
       exportedAt: new Date().toISOString()
     }, null, 2);
     const blob = new Blob([payload], {
@@ -1798,16 +1807,55 @@ function GrabProfitMeter() {
     reader.onload = async e => {
       try {
         const parsed = JSON.parse(e.target.result);
-        const imported = Array.isArray(parsed) ? parsed : Array.isArray(parsed.entries) ? parsed.entries : null;
-        if (!imported) throw new Error("รูปแบบไฟล์ไม่ถูกต้อง");
-        const merged = [...entries.filter(en => !imported.some(im => im.date === en.date)), ...imported].sort((a, b) => b.date.localeCompare(a.date));
-        setEntries(merged);
-        await window.storage.set("daily-entries", JSON.stringify(merged), false);
-        setImportMsg(`นำเข้าสำเร็จ ${imported.length} วัน`);
+        const importedEntries = Array.isArray(parsed) ? parsed : Array.isArray(parsed.entries) ? parsed.entries : null;
+        if (!importedEntries) throw new Error("รูปแบบไฟล์ไม่ถูกต้อง");
+        const mergedEntries = [...entries.filter(en => !importedEntries.some(im => im.date === en.date)), ...importedEntries].sort((a, b) => b.date.localeCompare(a.date));
+        setEntries(mergedEntries);
+        await window.storage.set("daily-entries", JSON.stringify(mergedEntries), false);
+        const restoredParts = [`รายได้ ${importedEntries.length} วัน`];
+        const mergeById = (current, imported) => [...current.filter(c => !imported.some(im => im.id === c.id)), ...imported];
+        if (Array.isArray(parsed.fixedExpenses)) {
+          const merged = mergeById(fixedExpenses, parsed.fixedExpenses);
+          setFixedExpenses(merged);
+          await window.storage.set("fixed-expenses", JSON.stringify(merged), false);
+          restoredParts.push("รายจ่ายรายเดือน");
+        }
+        if (Array.isArray(parsed.dailyExpenses)) {
+          const merged = mergeById(dailyExpenses, parsed.dailyExpenses);
+          setDailyExpenses(merged);
+          await window.storage.set("daily-expenses", JSON.stringify(merged), false);
+          restoredParts.push("รายจ่ายทั่วไป");
+        }
+        if (Array.isArray(parsed.maintenanceRecords)) {
+          const merged = mergeById(maintenanceRecords, parsed.maintenanceRecords);
+          setMaintenanceRecords(merged);
+          await window.storage.set("maintenance-records", JSON.stringify(merged), false);
+          restoredParts.push("ค่าซ่อมบำรุง");
+        }
+        if (Array.isArray(parsed.drivingSessions)) {
+          const merged = mergeById(drivingSessions, parsed.drivingSessions);
+          setDrivingSessions(merged);
+          await window.storage.set("driving-sessions", JSON.stringify(merged), false);
+          restoredParts.push("เวลาขับรถ");
+        }
+        if (parsed.settings && typeof parsed.settings === "object") {
+          const nextTurboTiers = Array.isArray(parsed.settings.turboTiers) ? parsed.settings.turboTiers : turboTiers;
+          const nextInsurance = typeof parsed.settings.insuranceCostPerDay === "number" ? parsed.settings.insuranceCostPerDay : insuranceCostPerDay;
+          const nextTheme = parsed.settings.themeMode || themeMode;
+          setTurboTiers(nextTurboTiers);
+          setInsuranceCostPerDay(nextInsurance);
+          setThemeMode(nextTheme);
+          await window.storage.set("settings", JSON.stringify({
+            turboTiers: nextTurboTiers,
+            insuranceCostPerDay: nextInsurance,
+            themeMode: nextTheme
+          }), false);
+        }
+        setImportMsg(`นำเข้าสำเร็จ: ${restoredParts.join(", ")}`);
       } catch (err) {
         setImportMsg("นำเข้าไม่สำเร็จ: ไฟล์ไม่ถูกต้อง");
       }
-      setTimeout(() => setImportMsg(""), 3000);
+      setTimeout(() => setImportMsg(""), 4000);
     };
     reader.readAsText(file);
   };
