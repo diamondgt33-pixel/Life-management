@@ -7,10 +7,6 @@
 <meta name="apple-mobile-web-app-capable" content="yes" />
 <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent" />
 <meta name="apple-mobile-web-app-title" content="Life Management" />
-<link rel="manifest" href="./manifest.json" />
-<link rel="apple-touch-icon" href="./icon-192.png" />
-<link rel="icon" type="image/png" sizes="192x192" href="./icon-192.png" />
-<link rel="icon" type="image/png" sizes="512x512" href="./icon-512.png" />
 <meta name="theme-color" content="#00B14F" />
 <title>Life Management — รายได้ Grab &amp; รายจ่ายส่วนตัว</title>
 <style>
@@ -1278,6 +1274,9 @@ function GrabProfitMeter() {
   const [viewingDayDetail, setViewingDayDetail] = useState(null);
   const [drivingSessions, setDrivingSessions] = useState([]);
   const [themeMode, setThemeMode] = useState("auto");
+  const [lastMonthlyReportShown, setLastMonthlyReportShown] = useState("");
+  const [showMonthlyReport, setShowMonthlyReport] = useState(false);
+  const [monthlyReportData, setMonthlyReportData] = useState(null);
   const [clockTick, setClockTick] = useState(Date.now());
   const [nowTick, setNowTick] = useState(Date.now());
   const [dailyExpPeriod, setDailyExpPeriod] = useState("day");
@@ -1340,6 +1339,10 @@ function GrabProfitMeter() {
       try {
         const ds = await window.storage.get("driving-sessions", false);
         if (ds && ds.value) setDrivingSessions(JSON.parse(ds.value));
+      } catch (e) {}
+      try {
+        const mr = await window.storage.get("last-monthly-report-shown", false);
+        if (mr && mr.value) setLastMonthlyReportShown(mr.value);
       } catch (e) {}
       try {
         const s = await window.storage.get("settings", false);
@@ -1469,6 +1472,43 @@ function GrabProfitMeter() {
       } catch (e) {}
     })();
   }, [fixedExpenses, loaded]);
+  useEffect(() => {
+    if (!loaded) return;
+    const today = todayISO();
+    const dayOfMonth = Number(today.slice(8, 10));
+    if (dayOfMonth !== 1) return;
+    const thisMonth = today.slice(0, 7);
+    if (lastMonthlyReportShown === thisMonth) return;
+    const d = new Date(today + "T00:00:00");
+    d.setMonth(d.getMonth() - 1);
+    const prevYM = toLocalISO(d).slice(0, 7);
+    const monthEntries = entries.filter(e => e.date.slice(0, 7) === prevYM);
+    const monthProfit = monthEntries.reduce((a, e) => a + (e.profit || 0), 0);
+    const monthIncome = monthEntries.reduce((a, e) => a + (e.totalIncome ?? e.income ?? 0), 0);
+    const monthDailyExp = dailyExpenses.filter(e => e.date.slice(0, 7) === prevYM).reduce((a, e) => a + (e.amount || 0), 0);
+    const fixedTotal = fixedExpenses.reduce((a, e) => a + (e.amount || 0), 0);
+    const totalExpense = monthDailyExp + fixedTotal;
+    const ratio = monthProfit > 0 ? totalExpense / monthProfit * 100 : totalExpense > 0 ? 100 : 0;
+    if (monthEntries.length > 0 || monthDailyExp > 0) {
+      setMonthlyReportData({
+        ym: prevYM,
+        monthProfit,
+        monthIncome,
+        monthDailyExp,
+        fixedTotal,
+        totalExpense,
+        ratio,
+        surplus: monthProfit - totalExpense
+      });
+      setShowMonthlyReport(true);
+    }
+    setLastMonthlyReportShown(thisMonth);
+    (async () => {
+      try {
+        await window.storage.set("last-monthly-report-shown", thisMonth, false);
+      } catch (e) {}
+    })();
+  }, [loaded]);
   const isDarkMode = useMemo(() => {
     if (themeMode === "dark") return true;
     if (themeMode === "light") return false;
@@ -5545,19 +5585,127 @@ function GrabProfitMeter() {
     style: {
       color: C.text
     }
-  }, viewingDayDetail.turboCount || 0), " รอบ")))));
+  }, viewingDayDetail.turboCount || 0), " รอบ")))), showMonthlyReport && monthlyReportData && React.createElement("div", {
+    className: "fixed inset-0 z-50 flex items-center justify-center p-5",
+    style: {
+      background: "rgba(0,0,0,0.55)"
+    },
+    onClick: () => setShowMonthlyReport(false)
+  }, React.createElement("div", {
+    className: "w-full max-w-sm rounded-2xl p-4",
+    style: {
+      background: C.panel,
+      maxHeight: "85vh",
+      overflowY: "auto"
+    },
+    onClick: e => e.stopPropagation()
+  }, React.createElement("div", {
+    className: "mb-1 flex items-center justify-between"
+  }, React.createElement("span", {
+    className: "text-sm font-semibold",
+    style: {
+      color: C.text
+    }
+  }, "📊 สรุปรายเดือน ", monthLabelThaiLong(monthlyReportData.ym)), React.createElement("button", {
+    onClick: () => setShowMonthlyReport(false),
+    className: "p-1",
+    "aria-label": "ปิด",
+    type: "button"
+  }, React.createElement("span", {
+    style: {
+      fontSize: 16,
+      color: C.textFaint
+    }
+  }, "✕"))), React.createElement("p", {
+    className: "mb-3 text-[11px]",
+    style: {
+      color: C.textFaint
+    }
+  }, "รายได้เทียบรายจ่ายของเดือนที่แล้ว"), React.createElement("div", {
+    className: "mb-3 grid grid-cols-2 gap-3"
+  }, React.createElement("div", null, React.createElement("div", {
+    className: "text-[11px]",
+    style: {
+      color: C.textFaint
+    }
+  }, "กำไรจาก Grab"), React.createElement("div", {
+    className: "text-xl font-bold",
+    style: {
+      color: C.green,
+      fontFamily: "'JetBrains Mono', monospace"
+    }
+  }, thb(monthlyReportData.monthProfit), " ฿")), React.createElement("div", null, React.createElement("div", {
+    className: "text-[11px]",
+    style: {
+      color: C.textFaint
+    }
+  }, "รายจ่ายรวม"), React.createElement("div", {
+    className: "text-xl font-bold",
+    style: {
+      color: C.red,
+      fontFamily: "'JetBrains Mono', monospace"
+    }
+  }, thb(monthlyReportData.totalExpense), " ฿"))), React.createElement("div", {
+    className: "mb-1.5 h-3 w-full overflow-hidden rounded-full",
+    style: {
+      background: C.bgSoft
+    }
+  }, React.createElement("div", {
+    className: "h-full rounded-full",
+    style: {
+      width: `${Math.min(100, monthlyReportData.ratio)}%`,
+      background: monthlyReportData.ratio >= 100 ? C.red : C.amber,
+      transition: "width 0.4s ease"
+    }
+  })), React.createElement("div", {
+    className: "mb-3 text-center text-xs font-medium",
+    style: {
+      color: monthlyReportData.surplus >= 0 ? C.greenDeep : C.red
+    }
+  }, "รายจ่ายคิดเป็น ", Math.round(monthlyReportData.ratio), "% ของกำไร —", " ", monthlyReportData.surplus >= 0 ? `เหลือเก็บ ${thb(monthlyReportData.surplus)} ฿` : `ขาดทุน ${thb(Math.abs(monthlyReportData.surplus))} ฿`), React.createElement("div", {
+    className: "flex flex-col gap-1.5 rounded-lg p-3",
+    style: {
+      background: C.bgSoft
+    }
+  }, React.createElement("div", {
+    className: "flex items-center justify-between text-xs"
+  }, React.createElement("span", {
+    style: {
+      color: C.textMuted
+    }
+  }, "กำไรจากค่าโดยสาร Grab"), React.createElement("span", {
+    style: {
+      color: C.text,
+      fontFamily: "'JetBrains Mono', monospace"
+    }
+  }, thb(monthlyReportData.monthProfit), " ฿")), React.createElement("div", {
+    className: "mt-1 flex items-center justify-between border-t pt-1.5 text-xs",
+    style: {
+      borderColor: C.hairline
+    }
+  }, React.createElement("span", {
+    style: {
+      color: C.textMuted
+    }
+  }, "รายจ่ายทั่วไป (เดือนนั้น)"), React.createElement("span", {
+    style: {
+      color: C.text,
+      fontFamily: "'JetBrains Mono', monospace"
+    }
+  }, thb(monthlyReportData.monthDailyExp), " ฿")), React.createElement("div", {
+    className: "flex items-center justify-between text-xs"
+  }, React.createElement("span", {
+    style: {
+      color: C.textMuted
+    }
+  }, "รายจ่ายรายเดือน (คงที่)"), React.createElement("span", {
+    style: {
+      color: C.text,
+      fontFamily: "'JetBrains Mono', monospace"
+    }
+  }, thb(monthlyReportData.fixedTotal), " ฿"))))));
 }
 ReactDOM.render(React.createElement(GrabProfitMeter), document.getElementById("root"));
-</script>
-
-<script>
-  if ("serviceWorker" in navigator) {
-    window.addEventListener("load", function () {
-      navigator.serviceWorker.register("./service-worker.js").catch(function (err) {
-        console.error("Service worker registration failed:", err);
-      });
-    });
-  }
 </script>
 </body>
 </html>
