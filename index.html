@@ -25,7 +25,6 @@
     กำลังโหลด…
   </div>
 </div>
-
 <script>
 /**
  * @license React
@@ -1262,6 +1261,7 @@ function GrabProfitMeter() {
   const [activeTab, setActiveTab] = useState("income");
   const [forecastPeriod, setForecastPeriod] = useState("day");
   const [fixedExpenses, setFixedExpenses] = useState(DEFAULT_EXPENSES);
+  const [fixedExpViewMonth, setFixedExpViewMonth] = useState(todayISO().slice(0, 7));
   const [dailyExpenses, setDailyExpenses] = useState([]);
   const [dailyExpDate, setDailyExpDate] = useState(todayISO());
   const [dailyExpCategory, setDailyExpCategory] = useState(DAILY_EXPENSE_CATEGORIES[0]);
@@ -2286,7 +2286,8 @@ function GrabProfitMeter() {
     return days;
   }, [dayOfWeekStats]);
   const monthlyCoverage = useMemo(() => {
-    const thisMonth = todayISO().slice(0, 7);
+    const thisMonth = fixedExpViewMonth;
+    const isCurrentMonth = thisMonth === todayISO().slice(0, 7);
     const profitThisMonth = entries.filter(e => e.date.slice(0, 7) === thisMonth).reduce((a, e) => a + (e.profit || 0), 0);
     const totalFixed = fixedExpenses.reduce((a, e) => a + (e.amount || 0), 0);
     const pct = totalFixed > 0 ? profitThisMonth / totalFixed * 100 : 0;
@@ -2306,7 +2307,7 @@ function GrabProfitMeter() {
     const y = Number(thisMonth.slice(0, 4));
     const m = Number(thisMonth.slice(5, 7));
     const daysInMonth = new Date(y, m, 0).getDate();
-    const dayOfMonth = Number(todayISO().slice(8, 10));
+    const dayOfMonth = isCurrentMonth ? Number(todayISO().slice(8, 10)) : daysInMonth;
     return {
       profitThisMonth,
       totalFixed,
@@ -2314,9 +2315,10 @@ function GrabProfitMeter() {
       remaining,
       waterfall,
       daysInMonth,
-      dayOfMonth
+      dayOfMonth,
+      isCurrentMonth
     };
-  }, [entries, fixedExpenses]);
+  }, [entries, fixedExpenses, fixedExpViewMonth]);
   const expenseCategoryOptions = useMemo(() => {
     const fromFixed = fixedExpenses.map(e => e.name).filter(Boolean);
     return [...new Set([...DAILY_EXPENSE_CATEGORIES, ...fromFixed])];
@@ -4709,12 +4711,39 @@ function GrabProfitMeter() {
     style: {
       color: C.text
     }
-  }, "รายจ่ายคงที่เดือนนี้ ครอบคลุมแล้ว"), React.createElement("span", {
-    className: "text-[12px]",
+  }, monthlyCoverage.isCurrentMonth ? "รายจ่ายคงที่เดือนนี้ ครอบคลุมแล้ว" : "รายจ่ายคงที่เดือนนั้น ครอบคลุมแล้ว")), React.createElement("div", {
+    className: "mb-2.5 flex items-center justify-between gap-1 rounded-lg",
     style: {
-      color: C.textFaint
+      background: "rgba(255,255,255,0.5)"
     }
-  }, monthLabelThaiLong(todayISO().slice(0, 7)))), React.createElement("div", {
+  }, React.createElement("button", {
+    onClick: () => setFixedExpViewMonth(m => shiftMonth(m, -1)),
+    className: "shrink-0 p-2",
+    "aria-label": "เดือนก่อนหน้า",
+    type: "button"
+  }, React.createElement(Icon, {
+    name: "chevronLeft",
+    size: 16,
+    color: C.textMuted
+  })), React.createElement("span", {
+    className: "text-[12px] font-medium",
+    style: {
+      color: C.text
+    }
+  }, monthLabelThaiLong(fixedExpViewMonth)), React.createElement("button", {
+    onClick: () => setFixedExpViewMonth(m => shiftMonth(m, 1)),
+    disabled: fixedExpViewMonth >= todayISO().slice(0, 7),
+    className: "shrink-0 p-2",
+    style: {
+      opacity: fixedExpViewMonth >= todayISO().slice(0, 7) ? 0.3 : 1
+    },
+    "aria-label": "เดือนถัดไป",
+    type: "button"
+  }, React.createElement(Icon, {
+    name: "chevronRight",
+    size: 16,
+    color: C.textMuted
+  }))), React.createElement("div", {
     className: "mb-3 flex items-end justify-between gap-3"
   }, React.createElement("div", null, React.createElement("div", {
     className: "text-3xl font-bold leading-none",
@@ -4727,7 +4756,7 @@ function GrabProfitMeter() {
     style: {
       color: C.textFaint
     }
-  }, "กำไรสะสมเดือนนี้ ", thb(monthlyCoverage.profitThisMonth), " ฿ / รายจ่ายคงที่ ", thb(monthlyCoverage.totalFixed), " ฿")), monthlyCoverage.pct >= 100 ? React.createElement("span", {
+  }, "กำไรสะสม", monthlyCoverage.isCurrentMonth ? "เดือนนี้" : "เดือนนั้น", " ", thb(monthlyCoverage.profitThisMonth), " ฿ / รายจ่ายคงที่ ", thb(monthlyCoverage.totalFixed), " ฿")), monthlyCoverage.pct >= 100 ? React.createElement("span", {
     className: "rounded-full px-2.5 py-1 text-xs font-medium",
     style: {
       background: C.greenDim,
@@ -4756,7 +4785,7 @@ function GrabProfitMeter() {
     style: {
       color: C.textFaint
     }
-  }, "วันที่ ", monthlyCoverage.dayOfMonth, " จาก ", monthlyCoverage.daysInMonth, " วันของเดือนนี้")), React.createElement("div", {
+  }, monthlyCoverage.isCurrentMonth ? `วันที่ ${monthlyCoverage.dayOfMonth} จาก ${monthlyCoverage.daysInMonth} วันของเดือนนี้` : `ครบเดือนแล้ว (${monthlyCoverage.daysInMonth} วัน)`)), React.createElement("div", {
     className: "mt-4 rounded-xl p-3.5",
     style: {
       background: C.panel,
@@ -4772,7 +4801,7 @@ function GrabProfitMeter() {
     style: {
       color: C.textFaint
     }
-  }, "ไล่จ่ายตามลำดับรายการด้านล่าง (บนลงล่าง) จากกำไรสะสมเดือนนี้ ปรับลำดับได้โดยแก้ไขรายการ"), React.createElement("div", {
+  }, "ไล่จ่ายตามลำดับรายการด้านล่าง (บนลงล่าง) จากกำไรสะสม", monthlyCoverage.isCurrentMonth ? "เดือนนี้" : "เดือนนั้น", " ปรับลำดับได้โดยแก้ไขรายการ"), React.createElement("div", {
     className: "flex flex-col gap-2"
   }, monthlyCoverage.waterfall.map(item => React.createElement("div", {
     key: item.id
