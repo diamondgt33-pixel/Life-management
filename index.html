@@ -1272,6 +1272,11 @@ function GrabProfitMeter() {
   const [fixedExpenses, setFixedExpenses] = useState(DEFAULT_EXPENSES);
   const [fixedExpViewMonth, setFixedExpViewMonth] = useState(todayISO().slice(0, 7));
   const [dailyExpenses, setDailyExpenses] = useState([]);
+  const [extraIncome, setExtraIncome] = useState([]);
+  const [showExtraIncomeForm, setShowExtraIncomeForm] = useState(false);
+  const [extraIncomeDate, setExtraIncomeDate] = useState(todayISO());
+  const [extraIncomeAmount, setExtraIncomeAmount] = useState(0);
+  const [extraIncomeNote, setExtraIncomeNote] = useState("");
   const [dailyExpDate, setDailyExpDate] = useState(todayISO());
   const [dailyExpCategory, setDailyExpCategory] = useState(DAILY_EXPENSE_CATEGORIES[0]);
   const [dailyExpAmount, setDailyExpAmount] = useState(0);
@@ -1344,6 +1349,10 @@ function GrabProfitMeter() {
       try {
         const de = await window.storage.get("daily-expenses", false);
         if (de && de.value) setDailyExpenses(JSON.parse(de.value));
+      } catch (e) {}
+      try {
+        const ei = await window.storage.get("extra-income", false);
+        if (ei && ei.value) setExtraIncome(JSON.parse(ei.value));
       } catch (e) {}
       try {
         const ds = await window.storage.get("driving-sessions", false);
@@ -1498,20 +1507,23 @@ function GrabProfitMeter() {
     const monthEntries = entries.filter(e => e.date.slice(0, 7) === prevYM);
     const monthProfit = monthEntries.reduce((a, e) => a + (e.profit || 0), 0);
     const monthIncome = monthEntries.reduce((a, e) => a + (e.totalIncome ?? e.income ?? 0), 0);
+    const monthExtraIncome = extraIncome.filter(e => e.date.slice(0, 7) === prevYM).reduce((a, e) => a + (e.amount || 0), 0);
     const monthDailyExp = dailyExpenses.filter(e => e.date.slice(0, 7) === prevYM).reduce((a, e) => a + (e.amount || 0), 0);
     const fixedTotal = fixedExpenses.reduce((a, e) => a + (e.amount || 0), 0);
     const totalExpense = monthDailyExp + fixedTotal;
-    const ratio = monthProfit > 0 ? totalExpense / monthProfit * 100 : totalExpense > 0 ? 100 : 0;
-    if (monthEntries.length > 0 || monthDailyExp > 0) {
+    const totalIncomeAllSources = monthProfit + monthExtraIncome;
+    const ratio = totalIncomeAllSources > 0 ? totalExpense / totalIncomeAllSources * 100 : totalExpense > 0 ? 100 : 0;
+    if (monthEntries.length > 0 || monthDailyExp > 0 || monthExtraIncome > 0) {
       setMonthlyReportData({
         ym: prevYM,
         monthProfit,
         monthIncome,
+        monthExtraIncome,
         monthDailyExp,
         fixedTotal,
         totalExpense,
         ratio,
-        surplus: monthProfit - totalExpense
+        surplus: totalIncomeAllSources - totalExpense
       });
       setShowMonthlyReport(true);
     }
@@ -1840,6 +1852,33 @@ function GrabProfitMeter() {
       console.error("Delete daily expense failed", e);
     }
   };
+  const addExtraIncome = async () => {
+    if (!extraIncomeAmount || extraIncomeAmount <= 0) return;
+    const record = {
+      id: `${extraIncomeDate}-${Date.now()}`,
+      date: extraIncomeDate,
+      amount: extraIncomeAmount,
+      note: extraIncomeNote
+    };
+    const next = [record, ...extraIncome].sort((a, b) => b.date.localeCompare(a.date));
+    setExtraIncome(next);
+    try {
+      await window.storage.set("extra-income", JSON.stringify(next), false);
+    } catch (e) {
+      console.error("Save extra income failed", e);
+    }
+    setExtraIncomeAmount(0);
+    setExtraIncomeNote("");
+  };
+  const deleteExtraIncome = async id => {
+    const next = extraIncome.filter(r => r.id !== id);
+    setExtraIncome(next);
+    try {
+      await window.storage.set("extra-income", JSON.stringify(next), false);
+    } catch (e) {
+      console.error("Delete extra income failed", e);
+    }
+  };
   const importInputRef = useRef(null);
   const [importMsg, setImportMsg] = useState("");
   const exportData = () => {
@@ -1849,10 +1888,13 @@ function GrabProfitMeter() {
       dailyExpenses,
       maintenanceRecords,
       drivingSessions,
+      extraIncome,
       settings: {
         turboTiers,
         insuranceCostPerDay,
-        themeMode
+        themeMode,
+        monthlyGoal,
+        workDays
       },
       exportedAt: new Date().toISOString()
     }, null, 2);
@@ -1934,17 +1976,29 @@ function GrabProfitMeter() {
           await window.storage.set("driving-sessions", JSON.stringify(merged), false);
           restoredParts.push("เวลาขับรถ");
         }
+        if (Array.isArray(parsed.extraIncome)) {
+          const merged = mergeById(extraIncome, parsed.extraIncome);
+          setExtraIncome(merged);
+          await window.storage.set("extra-income", JSON.stringify(merged), false);
+          restoredParts.push("รายได้พิเศษ");
+        }
         if (parsed.settings && typeof parsed.settings === "object") {
           const nextTurboTiers = Array.isArray(parsed.settings.turboTiers) ? parsed.settings.turboTiers : turboTiers;
           const nextInsurance = typeof parsed.settings.insuranceCostPerDay === "number" ? parsed.settings.insuranceCostPerDay : insuranceCostPerDay;
           const nextTheme = parsed.settings.themeMode || themeMode;
+          const nextMonthlyGoal = typeof parsed.settings.monthlyGoal === "number" ? parsed.settings.monthlyGoal : monthlyGoal;
+          const nextWorkDays = Array.isArray(parsed.settings.workDays) ? parsed.settings.workDays : workDays;
           setTurboTiers(nextTurboTiers);
           setInsuranceCostPerDay(nextInsurance);
           setThemeMode(nextTheme);
+          setMonthlyGoal(nextMonthlyGoal);
+          setWorkDays(nextWorkDays);
           await window.storage.set("settings", JSON.stringify({
             turboTiers: nextTurboTiers,
             insuranceCostPerDay: nextInsurance,
-            themeMode: nextTheme
+            themeMode: nextTheme,
+            monthlyGoal: nextMonthlyGoal,
+            workDays: nextWorkDays
           }), false);
         }
         setImportMsg(`นำเข้าสำเร็จ: ${restoredParts.join(", ")}`);
@@ -2306,7 +2360,9 @@ function GrabProfitMeter() {
   const monthlyCoverage = useMemo(() => {
     const thisMonth = fixedExpViewMonth;
     const isCurrentMonth = thisMonth === todayISO().slice(0, 7);
-    const profitThisMonth = entries.filter(e => e.date.slice(0, 7) === thisMonth).reduce((a, e) => a + (e.profit || 0), 0);
+    const grabProfitThisMonth = entries.filter(e => e.date.slice(0, 7) === thisMonth).reduce((a, e) => a + (e.profit || 0), 0);
+    const extraIncomeThisMonth = extraIncome.filter(e => e.date.slice(0, 7) === thisMonth).reduce((a, e) => a + (e.amount || 0), 0);
+    const profitThisMonth = grabProfitThisMonth + extraIncomeThisMonth;
     const totalFixed = fixedExpenses.reduce((a, e) => a + (e.amount || 0), 0);
     const pct = totalFixed > 0 ? profitThisMonth / totalFixed * 100 : 0;
     const remaining = Math.max(0, totalFixed - profitThisMonth);
@@ -2336,7 +2392,7 @@ function GrabProfitMeter() {
       dayOfMonth,
       isCurrentMonth
     };
-  }, [entries, fixedExpenses, fixedExpViewMonth]);
+  }, [entries, fixedExpenses, fixedExpViewMonth, extraIncome]);
   const expenseCategoryOptions = useMemo(() => {
     const fromFixed = fixedExpenses.map(e => e.name).filter(Boolean);
     return [...new Set([...DAILY_EXPENSE_CATEGORIES, ...fromFixed])];
@@ -2497,7 +2553,9 @@ function GrabProfitMeter() {
   }, [entries]);
   const monthlyGoalProgress = useMemo(() => {
     const thisMonth = todayISO().slice(0, 7);
-    const monthProfit = entries.filter(e => e.date.slice(0, 7) === thisMonth).reduce((a, e) => a + (e.profit || 0), 0);
+    const grabProfit = entries.filter(e => e.date.slice(0, 7) === thisMonth).reduce((a, e) => a + (e.profit || 0), 0);
+    const extraIncomeThisMonth = extraIncome.filter(e => e.date.slice(0, 7) === thisMonth).reduce((a, e) => a + (e.amount || 0), 0);
+    const monthProfit = grabProfit + extraIncomeThisMonth;
     const y = Number(thisMonth.slice(0, 4));
     const m = Number(thisMonth.slice(5, 7));
     const daysInMonth = new Date(y, m, 0).getDate();
@@ -2520,7 +2578,7 @@ function GrabProfitMeter() {
       pct,
       achieved: monthlyGoal > 0 && monthProfit >= monthlyGoal
     };
-  }, [entries, monthlyGoal, workDays]);
+  }, [entries, monthlyGoal, workDays, extraIncome]);
   const chartData = useMemo(() => {
     const sorted = [...entries].sort((a, b) => a.date.localeCompare(b.date));
     if (sorted.length === 0) return [];
@@ -2582,7 +2640,7 @@ function GrabProfitMeter() {
     "--c-hero-amber": "linear-gradient(165deg, #FFFFFF 0%, #FFF8EB 100%)",
     "--c-hero-red": "linear-gradient(165deg, #FFFFFF 0%, #FDEEEC 100%)"
   };
-  const CHAT_SUGGESTIONS = ["กำไรวันนี้เท่าไหร่", "กำไรเดือนนี้เท่าไหร่", "รายจ่ายทั่วไปเดือนนี้เท่าไหร่", "รายจ่ายรายเดือนครอบคลุมกี่%", "เป้าหมายเดือนนี้ถึงไหนแล้ว", "ค่าน้ำมันกี่กม./ลิตร", "ค่าซ่อมบำรุงรวมเท่าไหร่", "วันนี้ขับไปกี่ชั่วโมง", "สัปดาห์นี้เทอร์โบกี่รอบ", "วันไหนกำไรดีที่สุด"];
+  const CHAT_SUGGESTIONS = ["กำไรวันนี้เท่าไหร่", "กำไรเดือนนี้เท่าไหร่", "รายจ่ายทั่วไปเดือนนี้เท่าไหร่", "รายได้พิเศษเดือนนี้เท่าไหร่", "รายจ่ายรายเดือนครอบคลุมกี่%", "เป้าหมายเดือนนี้ถึงไหนแล้ว", "ค่าน้ำมันกี่กม./ลิตร", "ค่าซ่อมบำรุงรวมเท่าไหร่", "วันนี้ขับไปกี่ชั่วโมง", "สัปดาห์นี้เทอร์โบกี่รอบ", "วันไหนกำไรดีที่สุด"];
   const answerChatQuestion = rawText => {
     const q = rawText.trim();
     if (!q) return null;
@@ -2605,6 +2663,11 @@ function GrabProfitMeter() {
       const thisMonth = todayISO().slice(0, 7);
       const total = dailyExpenses.filter(e => e.date.slice(0, 7) === thisMonth).reduce((a, e) => a + (e.amount || 0), 0);
       return `รายจ่ายทั่วไปเดือนนี้รวม ${thb(total)} บาทครับ`;
+    }
+    if (/รายได้พิเศษ/.test(q)) {
+      const thisMonth = todayISO().slice(0, 7);
+      const total = extraIncome.filter(e => e.date.slice(0, 7) === thisMonth).reduce((a, e) => a + (e.amount || 0), 0);
+      return total > 0 ? `รายได้พิเศษเดือนนี้รวม ${thb(total)} บาทครับ` : "เดือนนี้ยังไม่มีรายได้พิเศษเลยครับ";
     }
     if (/รายจ่ายรายเดือน|รายจ่ายคงที่|ครอบคลุม/.test(q)) {
       return `รายจ่ายคงที่เดือนนี้ (${thb(monthlyCoverage.totalFixed)} บาท) ถูกครอบคลุมไปแล้ว ${Math.round(monthlyCoverage.pct)}% จากกำไรที่ทำได้ ${thb(monthlyCoverage.profitThisMonth)} บาทครับ`;
@@ -5139,6 +5202,122 @@ function GrabProfitMeter() {
     className: "mt-4 rounded-xl p-3.5",
     style: {
       background: C.panel,
+      border: `1px solid ${C.hairline}`,
+      borderLeft: `3px solid ${C.greenIncentive}`
+    }
+  }, React.createElement("div", {
+    className: "mb-2.5 flex items-center justify-between"
+  }, React.createElement("div", {
+    className: "flex items-center gap-2 text-xs font-semibold",
+    style: {
+      color: C.text
+    }
+  }, React.createElement("span", {
+    className: "flex h-6 w-6 items-center justify-center rounded-full",
+    style: {
+      background: C.greenDim
+    }
+  }, React.createElement(Icon, {
+    name: "gift",
+    size: 13,
+    color: C.greenIncentive
+  })), "รายได้พิเศษ"), React.createElement("button", {
+    onClick: () => setShowExtraIncomeForm(v => !v),
+    className: "text-xs font-medium",
+    style: {
+      color: C.green
+    },
+    type: "button"
+  }, showExtraIncomeForm ? "ปิด" : "+ บันทึกรายการ")), React.createElement("p", {
+    className: "mb-3 text-[11px] leading-relaxed",
+    style: {
+      color: C.textFaint
+    }
+  }, "รายได้ทางอื่นนอกจาก Grab เช่น งานเสริม ค่าคอมมิชชั่น ของขวัญ ฯลฯ จะถูกรวมเข้ากับกำไรตอนคำนวณรายจ่ายคงที่และเป้าหมายรายเดือนให้อัตโนมัติ"), showExtraIncomeForm && React.createElement("div", {
+    className: "mb-3 flex flex-col gap-2.5 row-in"
+  }, React.createElement("div", {
+    className: "grid grid-cols-2 gap-2.5"
+  }, React.createElement("div", null, React.createElement("label", {
+    className: "mb-1 block text-[11px]",
+    style: {
+      color: C.textFaint
+    }
+  }, "วันที่"), React.createElement("input", {
+    type: "date",
+    value: extraIncomeDate,
+    onChange: e => setExtraIncomeDate(e.target.value),
+    className: "w-full rounded-lg px-3 py-2 text-sm",
+    style: {
+      background: C.bgSoft,
+      color: C.text,
+      border: `1px solid ${C.hairline}`
+    }
+  })), React.createElement(Field, {
+    label: "จำนวนเงิน",
+    suffix: "บาท",
+    value: extraIncomeAmount,
+    onChange: setExtraIncomeAmount,
+    placeholder: "0"
+  })), React.createElement("input", {
+    type: "text",
+    value: extraIncomeNote,
+    onChange: e => setExtraIncomeNote(e.target.value),
+    placeholder: "โน้ต เช่น งานเสริม, ค่าคอมมิชชั่น (ไม่บังคับ)",
+    className: "w-full rounded-lg px-3 py-2 text-sm",
+    style: {
+      background: C.bgSoft,
+      color: C.text,
+      border: `1px solid ${C.hairline}`
+    }
+  }), React.createElement("button", {
+    onClick: addExtraIncome,
+    className: "rounded-lg py-2.5 text-sm font-semibold",
+    style: {
+      background: C.green,
+      color: "#FFFFFF"
+    },
+    type: "button"
+  }, "บันทึก")), extraIncome.length > 0 ? React.createElement("div", {
+    className: "flex flex-col gap-1.5"
+  }, extraIncome.slice(0, 10).map(r => React.createElement("div", {
+    key: r.id,
+    className: "flex items-center justify-between rounded-lg px-3 py-2",
+    style: {
+      background: C.bgSoft
+    }
+  }, React.createElement("div", {
+    className: "min-w-0 flex-1"
+  }, React.createElement("div", {
+    className: "text-xs font-medium",
+    style: {
+      color: C.text
+    }
+  }, thaiDate(r.date), r.note ? ` · ${r.note}` : "")), React.createElement("div", {
+    className: "flex items-center gap-2"
+  }, React.createElement("span", {
+    className: "text-xs font-semibold",
+    style: {
+      color: C.greenDeep,
+      fontFamily: "'JetBrains Mono', monospace"
+    }
+  }, "+", thb(r.amount), " ฿"), React.createElement("button", {
+    onClick: () => deleteExtraIncome(r.id),
+    type: "button",
+    "aria-label": "ลบ"
+  }, React.createElement(Icon, {
+    name: "trash",
+    size: 14,
+    color: C.textFaint
+  })))))) : !showExtraIncomeForm && React.createElement("div", {
+    className: "rounded-lg py-6 text-center text-xs",
+    style: {
+      background: C.bgSoft,
+      color: C.textFaint
+    }
+  }, "ยังไม่มีรายการ กด \"+ บันทึกรายการ\" เพื่อเริ่มบันทึก")), React.createElement("div", {
+    className: "mt-4 rounded-xl p-3.5",
+    style: {
+      background: C.panel,
       border: `1px solid ${C.hairline}`
     }
   }, React.createElement("div", {
@@ -6003,7 +6182,18 @@ function GrabProfitMeter() {
       color: C.text,
       fontFamily: "'JetBrains Mono', monospace"
     }
-  }, thb(monthlyReportData.monthProfit), " ฿")), React.createElement("div", {
+  }, thb(monthlyReportData.monthProfit), " ฿")), monthlyReportData.monthExtraIncome > 0 && React.createElement("div", {
+    className: "flex items-center justify-between text-xs"
+  }, React.createElement("span", {
+    style: {
+      color: C.textMuted
+    }
+  }, "รายได้พิเศษ"), React.createElement("span", {
+    style: {
+      color: C.text,
+      fontFamily: "'JetBrains Mono', monospace"
+    }
+  }, thb(monthlyReportData.monthExtraIncome), " ฿")), React.createElement("div", {
     className: "mt-1 flex items-center justify-between border-t pt-1.5 text-xs",
     style: {
       borderColor: C.hairline
