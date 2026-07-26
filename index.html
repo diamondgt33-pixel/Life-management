@@ -2432,6 +2432,31 @@ function GrabProfitMeter() {
       count: filteredExp.length
     };
   }, [dailyExpenses, entries, dailyExpPeriod, dailyExpViewDate]);
+  const livingBudgetCheck = useMemo(() => {
+    const livingItem = fixedExpenses.find(e => e.name === "ค่ากินอยู่");
+    if (!livingItem || !livingItem.amount) return {
+      hasItem: false
+    };
+    const thisMonth = todayISO().slice(0, 7);
+    const actualSpend = dailyExpenses.filter(e => e.date.slice(0, 7) === thisMonth).reduce((a, e) => a + (e.amount || 0), 0);
+    const budget = livingItem.amount;
+    const pct = budget > 0 ? actualSpend / budget * 100 : 0;
+    const dayOfMonth = Number(todayISO().slice(8, 10));
+    const y = Number(thisMonth.slice(0, 4));
+    const m = Number(thisMonth.slice(5, 7));
+    const daysInMonth = new Date(y, m, 0).getDate();
+    const projected = dayOfMonth > 0 ? actualSpend / dayOfMonth * daysInMonth : actualSpend;
+    return {
+      hasItem: true,
+      budget,
+      actualSpend,
+      pct,
+      remaining: budget - actualSpend,
+      overBudget: actualSpend > budget,
+      projected,
+      projectedOverBudget: projected > budget
+    };
+  }, [fixedExpenses, dailyExpenses]);
   const expenseForecast = useMemo(() => {
     const sortedExp = [...dailyExpenses].sort((a, b) => b.date.localeCompare(a.date));
     const recentDates = [...new Set(sortedExp.map(e => e.date))].slice(0, 7);
@@ -5549,7 +5574,67 @@ function GrabProfitMeter() {
     style: {
       color: dailyExpenseSummary.sufficient ? C.greenDeep : C.red
     }
-  }, dailyExpenseSummary.sufficient ? `เพียงพอ เหลือ ${thb(dailyExpenseSummary.surplus)} ฿` : `ยังไม่พอ ขาดอีก ${thb(Math.abs(dailyExpenseSummary.surplus))} ฿`)), expenseForecast.sampleSize > 0 && React.createElement("div", {
+  }, dailyExpenseSummary.sufficient ? `เพียงพอ เหลือ ${thb(dailyExpenseSummary.surplus)} ฿` : `ยังไม่พอ ขาดอีก ${thb(Math.abs(dailyExpenseSummary.surplus))} ฿`)), livingBudgetCheck.hasItem && React.createElement("div", {
+    className: "mt-4 rounded-xl p-3.5",
+    style: {
+      background: C.panel,
+      border: `1px solid ${C.hairline}`,
+      borderLeft: `3px solid ${livingBudgetCheck.overBudget ? C.red : C.green}`
+    }
+  }, React.createElement("div", {
+    className: "mb-1 flex items-center gap-2 text-xs font-semibold",
+    style: {
+      color: C.text
+    }
+  }, React.createElement("span", {
+    className: "flex h-6 w-6 items-center justify-center rounded-full",
+    style: {
+      background: livingBudgetCheck.overBudget ? C.redDim : C.greenDim
+    }
+  }, React.createElement(Icon, {
+    name: "wallet",
+    size: 13,
+    color: livingBudgetCheck.overBudget ? C.red : C.green
+  })), "เทียบกับงบ \"ค่ากินอยู่\""), React.createElement("p", {
+    className: "mb-3 text-[11px] leading-relaxed",
+    style: {
+      color: C.textFaint
+    }
+  }, "เทียบยอดรายจ่ายทั่วไปเดือนนี้กับงบที่ตั้งไว้ในรายจ่ายรายเดือน (", thb(livingBudgetCheck.budget), " บาท/เดือน)"), React.createElement("div", {
+    className: "mb-2 flex items-center justify-between text-xs"
+  }, React.createElement("span", {
+    style: {
+      color: C.textMuted
+    }
+  }, "ใช้ไปแล้วเดือนนี้"), React.createElement("span", {
+    className: "font-semibold",
+    style: {
+      color: livingBudgetCheck.overBudget ? C.red : C.text,
+      fontFamily: "'JetBrains Mono', monospace"
+    }
+  }, thb(livingBudgetCheck.actualSpend), " / ", thb(livingBudgetCheck.budget), " ฿")), React.createElement("div", {
+    className: "mb-2 h-3 w-full overflow-hidden rounded-full",
+    style: {
+      background: C.bgSoft
+    }
+  }, React.createElement("div", {
+    className: "h-full rounded-full",
+    style: {
+      width: `${Math.min(100, livingBudgetCheck.pct)}%`,
+      background: livingBudgetCheck.overBudget ? C.red : C.green,
+      transition: "width 0.4s ease"
+    }
+  })), React.createElement("div", {
+    className: "mb-3 text-center text-xs font-medium",
+    style: {
+      color: livingBudgetCheck.overBudget ? C.red : C.greenDeep
+    }
+  }, livingBudgetCheck.overBudget ? `เกินงบไปแล้ว ${thb(Math.abs(livingBudgetCheck.remaining))} บาท` : `พอดี เหลืองบอีก ${thb(livingBudgetCheck.remaining)} บาท (${Math.round(livingBudgetCheck.pct)}%)`), React.createElement("p", {
+    className: "text-center text-[11px]",
+    style: {
+      color: livingBudgetCheck.projectedOverBudget ? C.red : C.textFaint
+    }
+  }, livingBudgetCheck.projectedOverBudget ? `ถ้าใช้จ่ายในอัตรานี้ต่อไป คาดว่าสิ้นเดือนจะใช้ประมาณ ${thb(livingBudgetCheck.projected)} บาท (เกินงบ)` : `ถ้าใช้จ่ายในอัตรานี้ต่อไป คาดว่าสิ้นเดือนจะใช้ประมาณ ${thb(livingBudgetCheck.projected)} บาท`)), expenseForecast.sampleSize > 0 && React.createElement("div", {
     className: "mt-4 rounded-xl p-3.5",
     style: {
       background: C.panel,
