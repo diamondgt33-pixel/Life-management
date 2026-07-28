@@ -2037,7 +2037,8 @@ function GrabProfitMeter() {
       setTimeout(() => setImportMsg(""), 3000);
       return;
     }
-    const rows = [...entries].sort((a, b) => a.date.localeCompare(b.date)).map(e => ({
+    const wb = window.XLSX.utils.book_new();
+    const incomeRows = [...entries].sort((a, b) => a.date.localeCompare(b.date)).map(e => ({
       วันที่: e.date,
       "รายได้ค่าโดยสาร": e.income,
       ทิป: e.tips || 0,
@@ -2045,8 +2046,10 @@ function GrabProfitMeter() {
       โบนัสเทอร์โบ: e.turboBonus || 0,
       รายได้รวม: e.totalIncome ?? e.income,
       ค่าน้ำมัน: e.fuelCost || 0,
-      "ค่าคอมมิชชั่น (%)": e.useCommission ? e.commissionPercent : 0,
-      "ค่าคอมมิชชั่น (บาท)": Math.round((e.commissionCost || 0) * 100) / 100,
+      "น้ำมัน (ลิตร)": e.fuelLiters || 0,
+      ค่าประกัน: Math.round((e.insuranceCost || 0) * 100) / 100,
+      "ภาษีอินเซนทีฟ 3%": Math.round((e.incentiveTax || 0) * 100) / 100,
+      ค่าซ่อมบำรุงเฉลี่ย: Math.round((e.maintenanceCost || 0) * 100) / 100,
       ค่าใช้จ่ายอื่น: e.otherCost || 0,
       หมายเหตุ: e.otherLabel || "",
       ต้นทุนรวม: Math.round((e.totalCost || 0) * 100) / 100,
@@ -2055,9 +2058,50 @@ function GrabProfitMeter() {
       จำนวนรอบ: e.tripCount || 0,
       รอบเทอร์โบ: e.turboCount || 0
     }));
-    const ws = window.XLSX.utils.json_to_sheet(rows);
-    const wb = window.XLSX.utils.book_new();
-    window.XLSX.utils.book_append_sheet(wb, ws, "รายวัน");
+    window.XLSX.utils.book_append_sheet(wb, window.XLSX.utils.json_to_sheet(incomeRows), "รายได้ Grab");
+    const dailyExpRows = [...dailyExpenses].sort((a, b) => a.date.localeCompare(b.date)).map(e => ({
+      วันที่: e.date,
+      หมวดหมู่: e.category,
+      จำนวนเงิน: e.amount || 0,
+      โน้ต: e.note || ""
+    }));
+    window.XLSX.utils.book_append_sheet(wb, window.XLSX.utils.json_to_sheet(dailyExpRows), "รายจ่ายทั่วไป");
+    const fixedExpRows = fixedExpenses.map(e => ({
+      รายการ: e.name,
+      "จำนวนเงิน/เดือน": e.amount || 0
+    }));
+    window.XLSX.utils.book_append_sheet(wb, window.XLSX.utils.json_to_sheet(fixedExpRows), "รายจ่ายรายเดือน");
+    const extraIncomeRows = [...extraIncome].sort((a, b) => a.date.localeCompare(b.date)).map(e => ({
+      วันที่: e.date,
+      จำนวนเงิน: e.amount || 0,
+      โน้ต: e.note || ""
+    }));
+    window.XLSX.utils.book_append_sheet(wb, window.XLSX.utils.json_to_sheet(extraIncomeRows), "รายได้พิเศษ");
+    const maintRows = [...maintenanceRecords].sort((a, b) => a.date.localeCompare(b.date)).map(r => ({
+      วันที่: r.date,
+      ประเภท: r.type,
+      ค่าใช้จ่าย: r.cost || 0,
+      โน้ต: r.note || ""
+    }));
+    window.XLSX.utils.book_append_sheet(wb, window.XLSX.utils.json_to_sheet(maintRows), "ค่าซ่อมบำรุง");
+    const drivingRows = [...drivingSessions].sort((a, b) => a.date.localeCompare(b.date)).map(s => {
+      const start = new Date(s.startTime);
+      const end = s.endTime ? new Date(s.endTime) : null;
+      const minutes = end ? Math.round((end - start) / 60000) : null;
+      return {
+        วันที่: s.date,
+        เวลาเริ่ม: start.toLocaleTimeString("th-TH", {
+          hour: "2-digit",
+          minute: "2-digit"
+        }),
+        เวลาเลิก: end ? end.toLocaleTimeString("th-TH", {
+          hour: "2-digit",
+          minute: "2-digit"
+        }) : "ยังไม่หยุด",
+        "รวม (นาที)": minutes ?? ""
+      };
+    });
+    window.XLSX.utils.book_append_sheet(wb, window.XLSX.utils.json_to_sheet(drivingRows), "เวลาขับรถ");
     window.XLSX.writeFile(wb, `grab-profit-${todayISO()}.xlsx`);
   };
   const handleImportFile = file => {
