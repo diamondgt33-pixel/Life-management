@@ -1449,14 +1449,16 @@ function GrabProfitMeter() {
       }
       const perDayRate = totalMaint / daysSpan;
       const updated = prevEntries.map(e => {
-        if (e.maintenanceCost !== undefined) return e;
+        const newCost = e.income > 0 ? Math.round(perDayRate * 100) / 100 : 0;
+        const oldCost = e.maintenanceCost || 0;
+        if (Math.abs(newCost - oldCost) < 0.005) return e;
         changed = true;
-        const cost = e.income > 0 ? Math.round(perDayRate * 100) / 100 : 0;
+        const diff = newCost - oldCost;
         return {
           ...e,
-          maintenanceCost: cost,
-          totalCost: Math.round(((e.totalCost || 0) + cost) * 100) / 100,
-          profit: Math.round(((e.profit || 0) - cost) * 100) / 100
+          maintenanceCost: newCost,
+          totalCost: Math.round(((e.totalCost || 0) + diff) * 100) / 100,
+          profit: Math.round(((e.profit || 0) - diff) * 100) / 100
         };
       });
       if (changed) {
@@ -1464,14 +1466,14 @@ function GrabProfitMeter() {
           try {
             await window.storage.set("daily-entries", JSON.stringify(updated), false);
           } catch (err) {
-            console.error("Retroactive maintenance-cost migration failed", err);
+            console.error("Maintenance-cost reconciliation failed", err);
           }
         })();
         return updated;
       }
       return prevEntries;
     });
-  }, [loaded]);
+  }, [loaded, maintenanceRecords]);
   useEffect(() => {
     if (!loaded) return;
     (async () => {
@@ -4215,7 +4217,7 @@ function GrabProfitMeter() {
     style: {
       color: C.text
     }
-  }, thb(maintenanceSummary.perDay), " บาท"), " อัตโนมัติทุกวันที่มีรายได้ (ตัวเลขนี้จะขยับขึ้นเรื่อยๆ ตามค่าเฉลี่ยล่าสุดเมื่อมีรายการซ่อมใหม่เข้ามา)"), showMaintForm && React.createElement("div", {
+  }, thb(maintenanceSummary.perDay), " บาท"), " อัตโนมัติทุกวันที่มีรายได้ — อัตรานี้จะอัปเดตทุกวันเก่าย้อนหลังด้วย (ไม่ใช่แค่วันใหม่) เพื่อให้ยอดรวมตรงกับที่จ่ายจริงเสมอ กำไรของวันเก่าอาจขยับเล็กน้อยเมื่อมีรายการซ่อมใหม่เข้ามา"), showMaintForm && React.createElement("div", {
     className: "mb-3 flex flex-col gap-2.5 row-in"
   }, React.createElement("div", {
     className: "grid grid-cols-2 gap-2.5"
