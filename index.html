@@ -481,10 +481,135 @@ const yearLabelThai = y => {
     year: "numeric"
   });
 };
+const saveMonthlyReportImage = report => {
+  try {
+    const W = 900;
+    const H = 1180;
+    const canvas = document.createElement("canvas");
+    canvas.width = W;
+    canvas.height = H;
+    const ctx = canvas.getContext("2d");
+    const FONT = "'Space Grotesk', sans-serif";
+    ctx.fillStyle = "#F4F6F5";
+    ctx.fillRect(0, 0, W, H);
+    ctx.fillStyle = "#00B14F";
+    ctx.fillRect(0, 0, W, 160);
+    ctx.fillStyle = "#FFFFFF";
+    ctx.font = `600 34px ${FONT}`;
+    ctx.textBaseline = "middle";
+    ctx.fillText("📊 สรุปรายเดือน", 50, 70);
+    ctx.font = `400 26px ${FONT}`;
+    ctx.fillText(monthLabelThaiLong(report.ym), 50, 118);
+    const cardX = 40,
+      cardY = 190,
+      cardW = W - 80,
+      cardH = H - 230;
+    ctx.fillStyle = "#FFFFFF";
+    ctx.beginPath();
+    ctx.roundRect ? ctx.roundRect(cardX, cardY, cardW, cardH, 20) : ctx.rect(cardX, cardY, cardW, cardH);
+    ctx.fill();
+    let y = cardY + 60;
+    ctx.textAlign = "left";
+    ctx.fillStyle = "#9AA39D";
+    ctx.font = `400 20px ${FONT}`;
+    ctx.fillText("กำไรจาก Grab", cardX + 50, y);
+    ctx.fillStyle = "#F0575C";
+    ctx.fillText("รายจ่ายรวม", cardX + cardW / 2 + 20, y);
+    y += 46;
+    ctx.font = `700 40px 'JetBrains Mono', monospace`;
+    ctx.fillStyle = "#00953F";
+    ctx.fillText(`${thb(report.monthProfit)} ฿`, cardX + 50, y);
+    ctx.fillStyle = "#F0575C";
+    ctx.fillText(`${thb(report.totalExpense)} ฿`, cardX + cardW / 2 + 20, y);
+    y += 70;
+    const barW = cardW - 100;
+    ctx.fillStyle = "#F0F2F1";
+    ctx.beginPath();
+    ctx.roundRect ? ctx.roundRect(cardX + 50, y, barW, 18, 9) : ctx.rect(cardX + 50, y, barW, 18);
+    ctx.fill();
+    const pctWidth = Math.max(0, Math.min(1, report.ratio / 100)) * barW;
+    ctx.fillStyle = report.ratio >= 100 ? "#F0575C" : "#F59E0B";
+    ctx.beginPath();
+    ctx.roundRect ? ctx.roundRect(cardX + 50, y, pctWidth, 18, 9) : ctx.rect(cardX + 50, y, pctWidth, 18);
+    ctx.fill();
+    y += 50;
+    ctx.textAlign = "center";
+    ctx.font = `600 22px ${FONT}`;
+    ctx.fillStyle = report.surplus >= 0 ? "#00953F" : "#F0575C";
+    const summaryText = report.surplus >= 0 ? `รายจ่ายคิดเป็น ${Math.round(report.ratio)}% ของรายได้ — เหลือเก็บ ${thb(report.surplus)} ฿` : `รายจ่ายคิดเป็น ${Math.round(report.ratio)}% ของรายได้ — ขาดทุน ${thb(Math.abs(report.surplus))} ฿`;
+    ctx.fillText(summaryText, cardX + cardW / 2, y);
+    y += 60;
+    ctx.textAlign = "left";
+    ctx.strokeStyle = "#E7EBE9";
+    ctx.beginPath();
+    ctx.moveTo(cardX + 50, y);
+    ctx.lineTo(cardX + cardW - 50, y);
+    ctx.stroke();
+    y += 50;
+    const rows = [["กำไรจากค่าโดยสาร Grab", report.monthProfit]];
+    if (report.monthExtraIncome > 0) rows.push(["รายได้พิเศษ", report.monthExtraIncome]);
+    rows.push(["รายจ่ายทั่วไป (เดือนนั้น)", report.monthDailyExp]);
+    rows.push(["รายจ่ายรายเดือน (คงที่)", report.fixedTotal]);
+    ctx.font = `400 22px ${FONT}`;
+    rows.forEach(([label, value]) => {
+      ctx.fillStyle = "#6B7570";
+      ctx.textAlign = "left";
+      ctx.fillText(label, cardX + 50, y);
+      ctx.fillStyle = "#14181A";
+      ctx.textAlign = "right";
+      ctx.font = `600 22px 'JetBrains Mono', monospace`;
+      ctx.fillText(`${thb(value)} ฿`, cardX + cardW - 50, y);
+      ctx.font = `400 22px ${FONT}`;
+      y += 46;
+    });
+    ctx.textAlign = "center";
+    ctx.font = `400 16px ${FONT}`;
+    ctx.fillStyle = "#9AA39D";
+    ctx.fillText("Life Management — บันทึกอัตโนมัติ", W / 2, H - 20);
+    canvas.toBlob(blob => {
+      if (!blob) return;
+      const url = URL.createObjectURL(blob);
+      const a = document.createElement("a");
+      a.href = url;
+      a.download = `สรุปรายเดือน-${report.ym}.png`;
+      document.body.appendChild(a);
+      a.click();
+      document.body.removeChild(a);
+      setTimeout(() => URL.revokeObjectURL(url), 2000);
+    }, "image/png");
+  } catch (e) {
+    console.error("Failed to save monthly report image", e);
+  }
+};
 const shiftMonth = (ym, dir) => {
   const d = new Date(ym + "-01T00:00:00");
   d.setMonth(d.getMonth() + dir);
   return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}`;
+};
+const buildMaintenanceCostByDate = (workDates, maintenanceRecords) => {
+  const result = {
+    byDate: {},
+    currentSegmentRate: 0
+  };
+  if (!maintenanceRecords || maintenanceRecords.length === 0) return result;
+  const byDateCost = {};
+  maintenanceRecords.forEach(r => {
+    byDateCost[r.date] = (byDateCost[r.date] || 0) + (r.cost || 0);
+  });
+  const recordDates = Object.keys(byDateCost).sort();
+  const sortedWorkDates = [...new Set(workDates)].sort();
+  for (let i = 0; i < recordDates.length; i++) {
+    const segStart = recordDates[i];
+    const segEnd = i + 1 < recordDates.length ? recordDates[i + 1] : null;
+    const segCost = byDateCost[segStart];
+    const segWorkDays = sortedWorkDates.filter(d => d >= segStart && (segEnd === null || d < segEnd));
+    const perDay = segWorkDays.length > 0 ? Math.round(segCost / segWorkDays.length * 100) / 100 : 0;
+    segWorkDays.forEach(d => {
+      result.byDate[d] = perDay;
+    });
+    if (segEnd === null) result.currentSegmentRate = perDay;
+  }
+  return result;
 };
 const mondayOf = iso => {
   const d = new Date(iso + "T00:00:00");
@@ -1438,11 +1563,10 @@ function GrabProfitMeter() {
     if (!loaded) return;
     setEntries(prevEntries => {
       let changed = false;
-      const totalMaint = maintenanceRecords.reduce((a, r) => a + (r.cost || 0), 0);
-      const workDaysCount = Math.max(1, prevEntries.filter(e => (e.income || 0) > 0).length);
-      const perDayRate = totalMaint / workDaysCount;
+      const workDates = prevEntries.filter(e => (e.income || 0) > 0).map(e => e.date);
+      const segments = buildMaintenanceCostByDate(workDates, maintenanceRecords);
       const updated = prevEntries.map(e => {
-        const newCost = e.income > 0 ? Math.round(perDayRate * 100) / 100 : 0;
+        const newCost = e.income > 0 ? segments.byDate[e.date] || 0 : 0;
         const oldCost = e.maintenanceCost || 0;
         if (Math.abs(newCost - oldCost) < 0.005) return e;
         changed = true;
@@ -1509,7 +1633,7 @@ function GrabProfitMeter() {
     const totalIncomeAllSources = monthProfit + monthExtraIncome;
     const ratio = totalIncomeAllSources > 0 ? totalExpense / totalIncomeAllSources * 100 : totalExpense > 0 ? 100 : 0;
     if (monthEntries.length > 0 || monthDailyExp > 0 || monthExtraIncome > 0) {
-      setMonthlyReportData({
+      const reportData = {
         ym: prevYM,
         monthProfit,
         monthIncome,
@@ -1519,8 +1643,10 @@ function GrabProfitMeter() {
         totalExpense,
         ratio,
         surplus: totalIncomeAllSources - totalExpense
-      });
+      };
+      setMonthlyReportData(reportData);
       setShowMonthlyReport(true);
+      saveMonthlyReportImage(reportData);
     }
     setLastMonthlyReportShown(thisMonth);
     (async () => {
@@ -1678,7 +1804,8 @@ function GrabProfitMeter() {
   const maintenanceSummary = useMemo(() => {
     const total = maintenanceRecords.reduce((a, r) => a + (r.cost || 0), 0);
     const totalKm = entries.reduce((a, e) => a + (e.distanceKm || 0), 0);
-    const workDaysCount = Math.max(1, entries.filter(e => (e.income || 0) > 0).length);
+    const workDates = entries.filter(e => (e.income || 0) > 0).map(e => e.date);
+    const segments = buildMaintenanceCostByDate(workDates, maintenanceRecords);
     const byType = {};
     maintenanceRecords.forEach(r => {
       byType[r.type] = (byType[r.type] || 0) + (r.cost || 0);
@@ -1686,7 +1813,7 @@ function GrabProfitMeter() {
     return {
       total,
       count: maintenanceRecords.length,
-      perDay: total / workDaysCount,
+      perDay: segments.currentSegmentRate,
       perKm: totalKm > 0 ? total / totalKm : 0,
       byType,
       hasKmData: totalKm > 0
@@ -1696,7 +1823,13 @@ function GrabProfitMeter() {
   const insuranceCost = income > 0 ? insuranceCostPerDay || 0 : 0;
   const INCENTIVE_TAX_RATE = 0.03;
   const incentiveTax = Math.round((incentive || 0) * INCENTIVE_TAX_RATE * 100) / 100;
-  const maintenanceCostToday = income > 0 ? Math.round((maintenanceSummary.perDay || 0) * 100) / 100 : 0;
+  const maintenanceCostToday = (() => {
+    if (income <= 0) return 0;
+    const workDates = entries.filter(e => (e.income || 0) > 0 && e.date !== date).map(e => e.date);
+    workDates.push(date);
+    const segments = buildMaintenanceCostByDate(workDates, maintenanceRecords);
+    return segments.byDate[date] || 0;
+  })();
   const totalCost = fuelCost + commissionCost + (otherCost || 0) + insuranceCost + incentiveTax + maintenanceCostToday;
   const totalIncome = income + (tips || 0) + (incentive || 0) + (turboBonus || 0);
   const profit = totalIncome - totalCost;
@@ -4195,15 +4328,15 @@ function GrabProfitMeter() {
     style: {
       color: C.textFaint
     }
-  }, "ระบบเฉลี่ยค่าซ่อมบำรุงทั้งหมด", " ", React.createElement("strong", {
+  }, "แต่ละรายการซ่อมจะถูกเฉลี่ยหารด้วยจำนวน \"วันที่มีรายได้\" นับจากวันที่ซ่อมนั้นๆ", " ", React.createElement("strong", {
     style: {
       color: C.text
     }
-  }, thb(maintenanceSummary.total), " บาท"), " หารด้วยจำนวน \"วันที่มีรายได้\" (ไม่นับวันหยุดพัก) แล้วหักเป็นต้นทุนจริงวันละ", " ", React.createElement("strong", {
+  }, "ไปจนถึงก่อนวันที่มีรายการซ่อมถัดไป"), " — พอมีรายการซ่อมใหม่เข้ามา ยอดเก่าจะ \"ปิด\" ทันที ไม่ถูกคำนวณต่อ แล้วเริ่มเฉลี่ยยอดใหม่จากตรงนั้นแทน ตอนนี้กำลังเฉลี่ยยอดล่าสุดอยู่ที่วันละ", " ", React.createElement("strong", {
     style: {
       color: C.text
     }
-  }, thb(maintenanceSummary.perDay), " บาท"), " อัตโนมัติทุกวันที่มีรายได้ — อัตรานี้จะอัปเดตทุกวันเก่าย้อนหลังด้วย (ไม่ใช่แค่วันใหม่) ทำให้ยอดสะสมรวมตรงกับยอดที่จ่ายจริงเป๊ะเสมอ กำไรของวันเก่าอาจขยับเล็กน้อยเมื่อมีรายการซ่อมใหม่เข้ามา"), showMaintForm && React.createElement("div", {
+  }, thb(maintenanceSummary.perDay), " บาท"), " (ยังไม่ปิด จนกว่าจะมีรายการซ่อมใหม่)"), showMaintForm && React.createElement("div", {
     className: "mb-3 flex flex-col gap-2.5 row-in"
   }, React.createElement("div", {
     className: "grid grid-cols-2 gap-2.5"
@@ -6198,7 +6331,15 @@ function GrabProfitMeter() {
     style: {
       color: C.textFaint
     }
-  }, "รายได้เทียบรายจ่ายของเดือนที่แล้ว"), React.createElement("div", {
+  }, "รายได้เทียบรายจ่ายของเดือนที่แล้ว — บันทึกเป็นรูปภาพลงเครื่องให้อัตโนมัติแล้ว"), React.createElement("button", {
+    onClick: () => saveMonthlyReportImage(monthlyReportData),
+    className: "mb-3 w-full rounded-lg py-2 text-xs font-semibold",
+    style: {
+      background: C.bgSoft,
+      color: C.text
+    },
+    type: "button"
+  }, "📥 บันทึกเป็นรูปภาพอีกครั้ง"), React.createElement("div", {
     className: "mb-3 grid grid-cols-2 gap-3"
   }, React.createElement("div", null, React.createElement("div", {
     className: "text-[11px]",
