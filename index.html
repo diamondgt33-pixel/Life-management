@@ -1439,15 +1439,8 @@ function GrabProfitMeter() {
     setEntries(prevEntries => {
       let changed = false;
       const totalMaint = maintenanceRecords.reduce((a, r) => a + (r.cost || 0), 0);
-      const allDates = [...prevEntries.map(e => e.date), ...maintenanceRecords.map(r => r.date)];
-      let daysSpan = 1;
-      if (allDates.length > 0) {
-        const earliest = allDates.reduce((a, b) => a < b ? a : b);
-        const d1 = new Date(earliest + "T00:00:00");
-        const d2 = new Date(todayISO() + "T00:00:00");
-        daysSpan = Math.max(1, Math.round((d2 - d1) / 86400000) + 1);
-      }
-      const perDayRate = totalMaint / daysSpan;
+      const workDaysCount = Math.max(1, prevEntries.filter(e => (e.income || 0) > 0).length);
+      const perDayRate = totalMaint / workDaysCount;
       const updated = prevEntries.map(e => {
         const newCost = e.income > 0 ? Math.round(perDayRate * 100) / 100 : 0;
         const oldCost = e.maintenanceCost || 0;
@@ -1685,14 +1678,7 @@ function GrabProfitMeter() {
   const maintenanceSummary = useMemo(() => {
     const total = maintenanceRecords.reduce((a, r) => a + (r.cost || 0), 0);
     const totalKm = entries.reduce((a, e) => a + (e.distanceKm || 0), 0);
-    const allDates = [...entries.map(e => e.date), ...maintenanceRecords.map(r => r.date)];
-    let daysSpan = 1;
-    if (allDates.length > 0) {
-      const earliest = allDates.reduce((a, b) => a < b ? a : b);
-      const d1 = new Date(earliest + "T00:00:00");
-      const d2 = new Date(todayISO() + "T00:00:00");
-      daysSpan = Math.max(1, Math.round((d2 - d1) / 86400000) + 1);
-    }
+    const workDaysCount = Math.max(1, entries.filter(e => (e.income || 0) > 0).length);
     const byType = {};
     maintenanceRecords.forEach(r => {
       byType[r.type] = (byType[r.type] || 0) + (r.cost || 0);
@@ -1700,7 +1686,7 @@ function GrabProfitMeter() {
     return {
       total,
       count: maintenanceRecords.length,
-      perDay: total / daysSpan,
+      perDay: total / workDaysCount,
       perKm: totalKm > 0 ? total / totalKm : 0,
       byType,
       hasKmData: totalKm > 0
@@ -4213,11 +4199,11 @@ function GrabProfitMeter() {
     style: {
       color: C.text
     }
-  }, thb(maintenanceSummary.total), " บาท"), " หารด้วยจำนวนวัน แล้วหักเป็นต้นทุนจริงวันละ", " ", React.createElement("strong", {
+  }, thb(maintenanceSummary.total), " บาท"), " หารด้วยจำนวน \"วันที่มีรายได้\" (ไม่นับวันหยุดพัก) แล้วหักเป็นต้นทุนจริงวันละ", " ", React.createElement("strong", {
     style: {
       color: C.text
     }
-  }, thb(maintenanceSummary.perDay), " บาท"), " อัตโนมัติทุกวันที่มีรายได้ — อัตรานี้จะอัปเดตทุกวันเก่าย้อนหลังด้วย (ไม่ใช่แค่วันใหม่) เพื่อให้ยอดรวมตรงกับที่จ่ายจริงเสมอ กำไรของวันเก่าอาจขยับเล็กน้อยเมื่อมีรายการซ่อมใหม่เข้ามา"), showMaintForm && React.createElement("div", {
+  }, thb(maintenanceSummary.perDay), " บาท"), " อัตโนมัติทุกวันที่มีรายได้ — อัตรานี้จะอัปเดตทุกวันเก่าย้อนหลังด้วย (ไม่ใช่แค่วันใหม่) ทำให้ยอดสะสมรวมตรงกับยอดที่จ่ายจริงเป๊ะเสมอ กำไรของวันเก่าอาจขยับเล็กน้อยเมื่อมีรายการซ่อมใหม่เข้ามา"), showMaintForm && React.createElement("div", {
     className: "mb-3 flex flex-col gap-2.5 row-in"
   }, React.createElement("div", {
     className: "grid grid-cols-2 gap-2.5"
