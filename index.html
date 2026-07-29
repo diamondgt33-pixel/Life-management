@@ -618,6 +618,19 @@ const mondayOf = iso => {
   d.setDate(d.getDate() + diff);
   return toLocalISO(d);
 };
+const getWeekAdjustedProfit = (mondayKey, allEntries) => {
+  let total = 0;
+  allEntries.forEach(e => {
+    const entryWeek = mondayOf(e.date);
+    const turboWeek = e.turboBonusWeek || entryWeek;
+    if (entryWeek === mondayKey) {
+      total += (e.profit || 0) - (turboWeek !== mondayKey ? e.turboBonus || 0 : 0);
+    } else if (turboWeek === mondayKey) {
+      total += e.turboBonus || 0;
+    }
+  });
+  return total;
+};
 const periodLabel = (dateStr, period) => {
   const d = new Date(dateStr + "T00:00:00");
   if (period === "day") return thaiDate(dateStr);
@@ -1366,6 +1379,7 @@ function GrabProfitMeter() {
   const [tripCount, setTripCount] = useState(0);
   const [incentive, setIncentive] = useState(0);
   const [turboBonus, setTurboBonus] = useState(0);
+  const [turboBonusWeek, setTurboBonusWeek] = useState("");
   const [turboSlots, setTurboSlots] = useState([]);
   const [legacyTurboCount, setLegacyTurboCount] = useState(0);
   const toggleTurboSlot = slot => {
@@ -1780,6 +1794,7 @@ function GrabProfitMeter() {
       setTripCount(existing.tripCount || 0);
       setIncentive(existing.incentive || 0);
       setTurboBonus(existing.turboBonus || 0);
+      setTurboBonusWeek(existing.turboBonusWeek || "");
       setTurboSlots(Array.isArray(existing.turboSlots) ? existing.turboSlots : []);
       setLegacyTurboCount(existing.turboCount || 0);
       setFuelCost(existing.fuelCost || 0);
@@ -1793,6 +1808,7 @@ function GrabProfitMeter() {
       setTripCount(0);
       setIncentive(0);
       setTurboBonus(0);
+      setTurboBonusWeek("");
       setTurboSlots([]);
       setLegacyTurboCount(0);
       setFuelCost(0);
@@ -1843,6 +1859,7 @@ function GrabProfitMeter() {
       tripCount,
       incentive,
       turboBonus,
+      turboBonusWeek: turboBonusWeek || undefined,
       turboCount,
       turboSlots,
       fuelCost,
@@ -2044,6 +2061,7 @@ function GrabProfitMeter() {
       ทิป: e.tips || 0,
       อินเซนทีฟ: e.incentive || 0,
       โบนัสเทอร์โบ: e.turboBonus || 0,
+      "โบนัสเทอร์โบเป็นของสัปดาห์": e.turboBonusWeek || "",
       รายได้รวม: e.totalIncome ?? e.income,
       ค่าน้ำมัน: e.fuelCost || 0,
       "น้ำมัน (ลิตร)": e.fuelLiters || 0,
@@ -2404,7 +2422,7 @@ function GrabProfitMeter() {
       const filtered = entries.filter(e => mondayOf(e.date) === monday);
       return {
         income: filtered.reduce((a, e) => a + (e.totalIncome ?? e.income ?? 0), 0),
-        profit: filtered.reduce((a, e) => a + (e.profit || 0), 0),
+        profit: getWeekAdjustedProfit(monday, entries),
         trips: filtered.reduce((a, e) => a + (e.tripCount || 0), 0),
         count: filtered.length
       };
@@ -2430,7 +2448,7 @@ function GrabProfitMeter() {
     const avgIncome = recent.length > 0 ? recent.reduce((a, e) => a + (e.totalIncome ?? e.income ?? 0), 0) / recent.length : 0;
     const thisMonday = mondayOf(todayISO());
     const weekEntries = entries.filter(e => mondayOf(e.date) === thisMonday);
-    const weekSoFarProfit = weekEntries.reduce((a, e) => a + (e.profit || 0), 0);
+    const weekSoFarProfit = getWeekAdjustedProfit(thisMonday, entries);
     const weekSoFarIncome = weekEntries.reduce((a, e) => a + (e.totalIncome ?? e.income ?? 0), 0);
     const daysLoggedThisWeek = weekEntries.length;
     const daysRemainingThisWeek = Math.max(0, 7 - daysLoggedThisWeek);
@@ -3521,7 +3539,39 @@ function GrabProfitMeter() {
     style: {
       color: C.textFaint
     }
-  }, "หักภาษี ณ ที่จ่าย 3% จากอินเซนทีฟอัตโนมัติ (", thb(incentiveTax), " บาท) — เหลือรับจริงประมาณ ", thb(incentive - incentiveTax), " บาท")), React.createElement("div", {
+  }, "หักภาษี ณ ที่จ่าย 3% จากอินเซนทีฟอัตโนมัติ (", thb(incentiveTax), " บาท) — เหลือรับจริงประมาณ ", thb(incentive - incentiveTax), " บาท"), turboBonus > 0 && React.createElement("div", {
+    className: "mt-2.5 rounded-lg p-3",
+    style: {
+      background: C.amberDim
+    }
+  }, React.createElement("p", {
+    className: "mb-2 text-[11px] leading-relaxed",
+    style: {
+      color: "#92400E"
+    }
+  }, "เงินก้อนนี้เป็นผลงานของสัปดาห์ไหน? (Grab จ่ายโบนัสสัปดาห์ที่แล้วเข้าบัญชีทุกเช้าวันจันทร์ ถ้ากำลังกรอกวันจันทร์แล้วเป็นยอดของสัปดาห์ก่อน ให้เลือก \"สัปดาห์ที่แล้ว\")"), React.createElement("div", {
+    className: "flex gap-1.5"
+  }, React.createElement("button", {
+    type: "button",
+    onClick: () => setTurboBonusWeek(""),
+    className: "flex-1 rounded-lg py-1.5 text-[12px] font-medium",
+    style: {
+      background: !turboBonusWeek ? C.amber : "#FFFFFF",
+      color: !turboBonusWeek ? "#FFFFFF" : "#92400E"
+    }
+  }, "สัปดาห์นี้ (วันที่กรอก)"), React.createElement("button", {
+    type: "button",
+    onClick: () => {
+      const d = new Date(mondayOf(date) + "T00:00:00");
+      d.setDate(d.getDate() - 7);
+      setTurboBonusWeek(toLocalISO(d));
+    },
+    className: "flex-1 rounded-lg py-1.5 text-[12px] font-medium",
+    style: {
+      background: turboBonusWeek && turboBonusWeek !== mondayOf(date) ? C.amber : "#FFFFFF",
+      color: turboBonusWeek && turboBonusWeek !== mondayOf(date) ? "#FFFFFF" : "#92400E"
+    }
+  }, "สัปดาห์ที่แล้ว")))), React.createElement("div", {
     className: "rounded-xl p-3.5 mb-3",
     style: {
       background: C.panel,
