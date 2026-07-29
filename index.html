@@ -709,6 +709,11 @@ const METRICS = [{
 }];
 const DAILY_EXPENSE_CATEGORIES = ["ค่าอาหาร", "ค่ากาแฟ", "ค่าขนม", "ค่าเดินทาง", "ช้อปปิ้ง/ของใช้", "อื่นๆ"];
 const CATEGORY_CHART_COLORS = [C.purple, C.blue, C.amber, C.green, C.red, C.pink, C.greenTip, C.greenIncentive];
+const DEFAULT_VEHICLES = [{
+  id: "default",
+  name: "รถของฉัน",
+  type: "gas"
+}];
 const DEFAULT_EXPENSES = [{
   id: "exp-1",
   name: "ค่าบ้าน",
@@ -1388,6 +1393,10 @@ function GrabProfitMeter() {
   const turboCount = turboSlots.length > 0 ? turboSlots.length : legacyTurboCount;
   const [fuelCost, setFuelCost] = useState(0);
   const [fuelLiters, setFuelLiters] = useState(0);
+  const [vehicles, setVehicles] = useState(DEFAULT_VEHICLES);
+  const [activeVehicleId, setActiveVehicleId] = useState("default");
+  const [formVehicleId, setFormVehicleId] = useState("default");
+  const [showVehicleSettings, setShowVehicleSettings] = useState(false);
   const [monthlyGoal, setMonthlyGoal] = useState(0);
   const [workDays, setWorkDays] = useState([0, 1, 2, 3, 4, 5, 6]);
   const [chatOpen, setChatOpen] = useState(false);
@@ -1509,6 +1518,11 @@ function GrabProfitMeter() {
           if (parsed.themeMode) setThemeMode(parsed.themeMode);
           if (typeof parsed.monthlyGoal === "number") setMonthlyGoal(parsed.monthlyGoal);
           if (Array.isArray(parsed.workDays)) setWorkDays(parsed.workDays);
+          if (Array.isArray(parsed.vehicles) && parsed.vehicles.length > 0) setVehicles(parsed.vehicles);
+          if (parsed.activeVehicleId) {
+            setActiveVehicleId(parsed.activeVehicleId);
+            setFormVehicleId(parsed.activeVehicleId);
+          }
           if (Array.isArray(parsed.turboTiers) && parsed.turboTiers.length > 0) {
             setTurboTiers(parsed.turboTiers);
           }
@@ -1614,11 +1628,13 @@ function GrabProfitMeter() {
           insuranceCostPerDay,
           themeMode,
           monthlyGoal,
-          workDays
+          workDays,
+          vehicles,
+          activeVehicleId
         }), false);
       } catch (e) {}
     })();
-  }, [turboTiers, insuranceCostPerDay, themeMode, monthlyGoal, workDays, loaded]);
+  }, [turboTiers, insuranceCostPerDay, themeMode, monthlyGoal, workDays, vehicles, activeVehicleId, loaded]);
   useEffect(() => {
     if (!loaded) return;
     (async () => {
@@ -1681,6 +1697,39 @@ function GrabProfitMeter() {
   }, []);
   const cycleThemeMode = () => {
     setThemeMode(m => m === "auto" ? "light" : m === "light" ? "dark" : "auto");
+  };
+  const formVehicle = vehicles.find(v => v.id === formVehicleId) || vehicles[0] || DEFAULT_VEHICLES[0];
+  const isFormVehicleEV = formVehicle?.type === "ev";
+  const energyLabel = isFormVehicleEV ? "ค่าไฟ" : "ค่าน้ำมัน";
+  const energyUnit = isFormVehicleEV ? "กิโลวัตต์" : "ลิตร";
+  const energyUnitShort = isFormVehicleEV ? "kWh" : "ลิตร";
+  const efficiencyUnit = isFormVehicleEV ? "กม./kWh" : "กม./ลิตร";
+  const activeVehicleForDisplay = vehicles.find(v => v.id === activeVehicleId) || vehicles[0] || DEFAULT_VEHICLES[0];
+  const isActiveVehicleEV = activeVehicleForDisplay?.type === "ev";
+  const activeEnergyLabel = isActiveVehicleEV ? "ค่าไฟ" : "ค่าน้ำมัน";
+  const activeEnergyUnitShort = isActiveVehicleEV ? "kWh" : "ลิตร";
+  const activeEfficiencyUnit = isActiveVehicleEV ? "กม./kWh" : "กม./ลิตร";
+  const addVehicle = () => {
+    const id = `veh-${Date.now()}`;
+    setVehicles(prev => [...prev, {
+      id,
+      name: "รถใหม่",
+      type: "gas"
+    }]);
+  };
+  const updateVehicle = (id, field, value) => {
+    setVehicles(prev => prev.map(v => v.id === id ? {
+      ...v,
+      [field]: value
+    } : v));
+  };
+  const deleteVehicle = id => {
+    if (vehicles.length <= 1) return;
+    setVehicles(prev => prev.filter(v => v.id !== id));
+    if (activeVehicleId === id) {
+      const fallback = vehicles.find(v => v.id !== id);
+      if (fallback) setActiveVehicleId(fallback.id);
+    }
   };
   const activeDrivingSession = drivingSessions.find(s => s.endTime === null) || null;
   useEffect(() => {
@@ -1799,6 +1848,7 @@ function GrabProfitMeter() {
       setLegacyTurboCount(existing.turboCount || 0);
       setFuelCost(existing.fuelCost || 0);
       setFuelLiters(existing.fuelLiters || 0);
+      setFormVehicleId(existing.vehicleId || activeVehicleId);
       setOtherCost(existing.otherCost || 0);
       setOtherLabel(existing.otherLabel || "");
     } else {
@@ -1813,6 +1863,7 @@ function GrabProfitMeter() {
       setLegacyTurboCount(0);
       setFuelCost(0);
       setFuelLiters(0);
+      setFormVehicleId(activeVehicleId);
       setOtherCost(0);
       setOtherLabel("");
     }
@@ -1864,6 +1915,7 @@ function GrabProfitMeter() {
       turboSlots,
       fuelCost,
       fuelLiters,
+      vehicleId: formVehicleId,
       otherCost,
       otherLabel,
       commissionCost,
@@ -1883,7 +1935,9 @@ function GrabProfitMeter() {
         insuranceCostPerDay,
         themeMode,
         monthlyGoal,
-        workDays
+        workDays,
+        vehicles,
+        activeVehicleId
       }), false);
       setSaveFlash(true);
       setTimeout(() => setSaveFlash(false), 1400);
@@ -2032,7 +2086,9 @@ function GrabProfitMeter() {
         insuranceCostPerDay,
         themeMode,
         monthlyGoal,
-        workDays
+        workDays,
+        vehicles,
+        activeVehicleId
       },
       exportedAt: new Date().toISOString()
     }, null, 2);
@@ -2057,14 +2113,15 @@ function GrabProfitMeter() {
     const wb = window.XLSX.utils.book_new();
     const incomeRows = [...entries].sort((a, b) => a.date.localeCompare(b.date)).map(e => ({
       วันที่: e.date,
+      รถที่ใช้: vehicles.find(v => v.id === (e.vehicleId || "default"))?.name || "รถของฉัน",
       "รายได้ค่าโดยสาร": e.income,
       ทิป: e.tips || 0,
       อินเซนทีฟ: e.incentive || 0,
       โบนัสเทอร์โบ: e.turboBonus || 0,
       "โบนัสเทอร์โบเป็นของสัปดาห์": e.turboBonusWeek || "",
       รายได้รวม: e.totalIncome ?? e.income,
-      ค่าน้ำมัน: e.fuelCost || 0,
-      "น้ำมัน (ลิตร)": e.fuelLiters || 0,
+      "ค่าน้ำมัน/ค่าไฟ": e.fuelCost || 0,
+      "ลิตร/kWh": e.fuelLiters || 0,
       ค่าประกัน: Math.round((e.insuranceCost || 0) * 100) / 100,
       "ภาษีอินเซนทีฟ 3%": Math.round((e.incentiveTax || 0) * 100) / 100,
       ค่าซ่อมบำรุงเฉลี่ย: Math.round((e.maintenanceCost || 0) * 100) / 100,
@@ -2171,17 +2228,24 @@ function GrabProfitMeter() {
           const nextTheme = parsed.settings.themeMode || themeMode;
           const nextMonthlyGoal = typeof parsed.settings.monthlyGoal === "number" ? parsed.settings.monthlyGoal : monthlyGoal;
           const nextWorkDays = Array.isArray(parsed.settings.workDays) ? parsed.settings.workDays : workDays;
+          const nextVehicles = Array.isArray(parsed.settings.vehicles) && parsed.settings.vehicles.length > 0 ? parsed.settings.vehicles : vehicles;
+          const nextActiveVehicleId = parsed.settings.activeVehicleId || activeVehicleId;
           setTurboTiers(nextTurboTiers);
           setInsuranceCostPerDay(nextInsurance);
           setThemeMode(nextTheme);
           setMonthlyGoal(nextMonthlyGoal);
           setWorkDays(nextWorkDays);
+          setVehicles(nextVehicles);
+          setActiveVehicleId(nextActiveVehicleId);
+          setFormVehicleId(nextActiveVehicleId);
           await window.storage.set("settings", JSON.stringify({
             turboTiers: nextTurboTiers,
             insuranceCostPerDay: nextInsurance,
             themeMode: nextTheme,
             monthlyGoal: nextMonthlyGoal,
-            workDays: nextWorkDays
+            workDays: nextWorkDays,
+            vehicles: nextVehicles,
+            activeVehicleId: nextActiveVehicleId
           }), false);
         }
         setImportMsg(`นำเข้าสำเร็จ: ${restoredParts.join(", ")}`);
@@ -2740,7 +2804,7 @@ function GrabProfitMeter() {
     }));
   }, [drivingSessions, drivingChartGranularity, nowTick]);
   const fuelEfficiencySummary = useMemo(() => {
-    const valid = entries.filter(e => (e.fuelLiters || 0) > 0 && (e.distanceKm || 0) > 0);
+    const valid = entries.filter(e => (e.fuelLiters || 0) > 0 && (e.distanceKm || 0) > 0 && (e.vehicleId || "default") === activeVehicleId);
     const totalKm = valid.reduce((a, e) => a + e.distanceKm, 0);
     const totalLiters = valid.reduce((a, e) => a + e.fuelLiters, 0);
     const avgKmPerLiter = totalLiters > 0 ? totalKm / totalLiters : 0;
@@ -2751,14 +2815,14 @@ function GrabProfitMeter() {
       avgKmPerLiter,
       hasData: valid.length > 0
     };
-  }, [entries]);
+  }, [entries, activeVehicleId]);
   const fuelEfficiencyChartData = useMemo(() => {
-    const valid = [...entries].filter(e => (e.fuelLiters || 0) > 0 && (e.distanceKm || 0) > 0).sort((a, b) => a.date.localeCompare(b.date));
+    const valid = [...entries].filter(e => (e.fuelLiters || 0) > 0 && (e.distanceKm || 0) > 0 && (e.vehicleId || "default") === activeVehicleId).sort((a, b) => a.date.localeCompare(b.date));
     return valid.slice(-14).map(e => ({
       label: thaiDateShort(e.date),
       value: Math.round(e.distanceKm / e.fuelLiters * 100) / 100
     }));
-  }, [entries]);
+  }, [entries, activeVehicleId]);
   const monthlyGoalProgress = useMemo(() => {
     const thisMonth = todayISO().slice(0, 7);
     const grabProfit = entries.filter(e => e.date.slice(0, 7) === thisMonth).reduce((a, e) => a + (e.profit || 0), 0);
@@ -3670,7 +3734,9 @@ function GrabProfitMeter() {
       borderLeft: `3px solid ${C.amber}`
     }
   }, React.createElement("div", {
-    className: "flex items-center gap-2 mb-3 text-xs font-semibold",
+    className: "mb-3 flex items-center justify-between"
+  }, React.createElement("div", {
+    className: "flex items-center gap-2 text-xs font-semibold",
     style: {
       color: C.text
     }
@@ -3683,17 +3749,104 @@ function GrabProfitMeter() {
     name: "fuel",
     size: 13,
     color: C.amber
-  })), "ค่าน้ำมัน"), React.createElement("div", {
+  })), energyLabel), React.createElement("button", {
+    onClick: () => setShowVehicleSettings(v => !v),
+    className: "text-[11px] font-medium",
+    style: {
+      color: C.textMuted
+    },
+    type: "button"
+  }, "🚗 ", formVehicle?.name || "รถของฉัน", " ▾")), showVehicleSettings && React.createElement("div", {
+    className: "mb-3 flex flex-col gap-2 rounded-lg p-3 row-in",
+    style: {
+      background: C.bgSoft
+    }
+  }, React.createElement("p", {
+    className: "mb-1 text-[11px]",
+    style: {
+      color: C.textFaint
+    }
+  }, "เลือกรถที่ใช้บันทึกวันนี้ หรือเพิ่ม/แก้ไขโปรไฟล์รถ (เผื่อมีรถไฟฟ้าในอนาคต)"), vehicles.map(v => React.createElement("div", {
+    key: v.id,
+    className: "flex items-center gap-2 rounded-lg p-2",
+    style: {
+      background: C.panel
+    }
+  }, React.createElement("button", {
+    onClick: () => {
+      setFormVehicleId(v.id);
+      setActiveVehicleId(v.id);
+    },
+    className: "flex h-6 w-6 shrink-0 items-center justify-center rounded-full",
+    style: {
+      border: `2px solid ${formVehicleId === v.id ? C.green : C.hairline}`
+    },
+    type: "button",
+    "aria-label": "เลือกรถคันนี้"
+  }, formVehicleId === v.id && React.createElement("span", {
+    style: {
+      width: 10,
+      height: 10,
+      borderRadius: 9999,
+      background: C.green,
+      display: "block"
+    }
+  })), React.createElement("input", {
+    type: "text",
+    value: v.name,
+    onChange: e => updateVehicle(v.id, "name", e.target.value),
+    className: "min-w-0 flex-1 rounded-lg px-2 py-1.5 text-xs",
+    style: {
+      background: C.bgSoft,
+      color: C.text,
+      border: `1px solid ${C.hairline}`
+    }
+  }), React.createElement("div", {
+    className: "flex shrink-0 gap-1"
+  }, React.createElement("button", {
+    onClick: () => updateVehicle(v.id, "type", "gas"),
+    className: "rounded-md px-2 py-1.5 text-[11px] font-medium",
+    style: {
+      background: v.type !== "ev" ? C.amber : C.bgSoft,
+      color: v.type !== "ev" ? "#FFFFFF" : C.textFaint
+    },
+    type: "button"
+  }, "น้ำมัน"), React.createElement("button", {
+    onClick: () => updateVehicle(v.id, "type", "ev"),
+    className: "rounded-md px-2 py-1.5 text-[11px] font-medium",
+    style: {
+      background: v.type === "ev" ? C.blue : C.bgSoft,
+      color: v.type === "ev" ? "#FFFFFF" : C.textFaint
+    },
+    type: "button"
+  }, "ไฟฟ้า")), vehicles.length > 1 && React.createElement("button", {
+    onClick: () => deleteVehicle(v.id),
+    type: "button",
+    "aria-label": "ลบรถคันนี้"
+  }, React.createElement(Icon, {
+    name: "trash",
+    size: 14,
+    color: C.textFaint
+  })))), React.createElement("button", {
+    onClick: addVehicle,
+    className: "rounded-lg py-2 text-xs font-semibold",
+    style: {
+      background: C.bgSoft,
+      color: C.green,
+      border: `1px dashed ${C.hairline}`
+    },
+    type: "button"
+  }, "+ เพิ่มรถอีกคัน")), React.createElement("div", {
     className: "grid grid-cols-2 gap-2.5"
   }, React.createElement(Field, {
-    label: "ค่าน้ำมันที่จ่ายจริง (ตอนเติมเต็มถัง)",
+    label: `${energyLabel}ที่จ่ายจริง (ตอนเติมเต็ม${isFormVehicleEV ? "" : "ถัง"})`,
     suffix: "บาท",
     value: fuelCost,
     onChange: setFuelCost,
     placeholder: "0"
   }), React.createElement(Field, {
-    label: "จำนวนลิตรที่เติม (ไม่บังคับ)",
-    suffix: "ลิตร",
+    label: `จำนวน${energyUnit}ที่${isFormVehicleEV ? "ชาร์จ" : "เติม"} (ไม่บังคับ)`,
+    suffix: energyUnitShort,
     value: fuelLiters,
     onChange: setFuelLiters,
     placeholder: "0"
@@ -3706,7 +3859,7 @@ function GrabProfitMeter() {
     style: {
       color: C.text
     }
-  }, (distanceKm / fuelLiters).toFixed(2), " กม./ลิตร"))), React.createElement("div", {
+  }, (distanceKm / fuelLiters).toFixed(2), " ", efficiencyUnit))), React.createElement("div", {
     className: "rounded-xl p-3.5 mb-4",
     style: {
       background: C.panel,
@@ -4612,7 +4765,7 @@ function GrabProfitMeter() {
     name: "fuel",
     size: 13,
     color: C.amber
-  })), "ประสิทธิภาพน้ำมัน"), React.createElement("div", {
+  })), "ประสิทธิภาพ", activeEnergyLabel, " · ", activeVehicleForDisplay?.name), React.createElement("div", {
     className: "mb-3 grid grid-cols-3 gap-2 text-center"
   }, React.createElement("div", {
     className: "rounded-lg py-2",
@@ -4635,7 +4788,7 @@ function GrabProfitMeter() {
     style: {
       color: C.textFaint
     }
-  }, "กม./ลิตร")), React.createElement("div", {
+  }, activeEfficiencyUnit)), React.createElement("div", {
     className: "rounded-lg py-2",
     style: {
       background: C.bgSoft
@@ -4666,7 +4819,7 @@ function GrabProfitMeter() {
     style: {
       color: C.textFaint
     }
-  }, "น้ำมันรวม"), React.createElement("div", {
+  }, activeEnergyLabel, "รวม"), React.createElement("div", {
     className: "text-sm font-semibold",
     style: {
       color: C.text,
@@ -4677,12 +4830,12 @@ function GrabProfitMeter() {
     style: {
       color: C.textFaint
     }
-  }, "ลิตร"))), fuelEfficiencyChartData.length > 1 && React.createElement(React.Fragment, null, React.createElement("p", {
+  }, activeEnergyUnitShort))), fuelEfficiencyChartData.length > 1 && React.createElement(React.Fragment, null, React.createElement("p", {
     className: "mb-2 text-[11px]",
     style: {
       color: C.textFaint
     }
-  }, "แนวโน้ม กม./ลิตร ต่อครั้งที่เติม (ล่าสุด ", fuelEfficiencyChartData.length, " ครั้ง)"), React.createElement(MiniBarChart, {
+  }, "แนวโน้ม ", activeEfficiencyUnit, " ต่อครั้งที่", isActiveVehicleEV ? "ชาร์จ" : "เติม", " (ล่าสุด ", fuelEfficiencyChartData.length, " ครั้ง)"), React.createElement(MiniBarChart, {
     data: fuelEfficiencyChartData,
     metric: {
       color: C.amber
