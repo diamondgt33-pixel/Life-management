@@ -1618,7 +1618,7 @@ function GrabProfitMeter() {
       }
       return prevEntries;
     });
-  }, [loaded, maintenanceRecords]);
+  }, [loaded, maintenanceRecords, entries]);
   useEffect(() => {
     if (!loaded) return;
     (async () => {
