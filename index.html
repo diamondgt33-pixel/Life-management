@@ -494,13 +494,22 @@ const yearLabelThai = y => {
 };
 const saveMonthlyReportImage = report => {
   try {
+    const {
+      cur,
+      prev,
+      categoryDeltas,
+      insights
+    } = report;
+    const catRows = Object.entries(cur.byCategory).sort((a, b) => b[1] - a[1]);
+    const changedCats = categoryDeltas.filter(c => Math.abs(c.delta) >= 1).slice(0, 4);
     const W = 900;
-    const H = 1180;
+    const H = 1080 + catRows.length * 40 + changedCats.length * 40 + insights.length * 60 + (cur.extraIncomeTotal > 0 ? 40 : 0);
     const canvas = document.createElement("canvas");
     canvas.width = W;
     canvas.height = H;
     const ctx = canvas.getContext("2d");
     const FONT = "'Space Grotesk', sans-serif";
+    const MONO = "'JetBrains Mono', monospace";
     ctx.fillStyle = "#F4F6F5";
     ctx.fillRect(0, 0, W, H);
     ctx.fillStyle = "#00B14F";
@@ -510,7 +519,7 @@ const saveMonthlyReportImage = report => {
     ctx.textBaseline = "middle";
     ctx.fillText("📊 สรุปรายเดือน", 50, 70);
     ctx.font = `400 26px ${FONT}`;
-    ctx.fillText(monthLabelThaiLong(report.ym), 50, 118);
+    ctx.fillText(`${monthLabelThaiLong(cur.ym)} (เทียบ ${monthLabelThaiLong(prev.ym)})`, 50, 118);
     const cardX = 40,
       cardY = 190,
       cardW = W - 80,
@@ -523,55 +532,136 @@ const saveMonthlyReportImage = report => {
     ctx.textAlign = "left";
     ctx.fillStyle = "#9AA39D";
     ctx.font = `400 20px ${FONT}`;
-    ctx.fillText("กำไรจาก Grab", cardX + 50, y);
+    ctx.fillText("รายได้รวมทุกทาง", cardX + 50, y);
     ctx.fillStyle = "#F0575C";
     ctx.fillText("รายจ่ายรวม", cardX + cardW / 2 + 20, y);
     y += 46;
-    ctx.font = `700 40px 'JetBrains Mono', monospace`;
+    ctx.font = `700 38px ${MONO}`;
     ctx.fillStyle = "#00953F";
-    ctx.fillText(`${thb(report.monthProfit)} ฿`, cardX + 50, y);
+    ctx.fillText(`${thb(cur.totalIncome)} ฿`, cardX + 50, y);
     ctx.fillStyle = "#F0575C";
-    ctx.fillText(`${thb(report.totalExpense)} ฿`, cardX + cardW / 2 + 20, y);
-    y += 70;
+    ctx.fillText(`${thb(cur.totalExpense)} ฿`, cardX + cardW / 2 + 20, y);
+    y += 60;
     const barW = cardW - 100;
     ctx.fillStyle = "#F0F2F1";
     ctx.beginPath();
     ctx.roundRect ? ctx.roundRect(cardX + 50, y, barW, 18, 9) : ctx.rect(cardX + 50, y, barW, 18);
     ctx.fill();
-    const pctWidth = Math.max(0, Math.min(1, report.ratio / 100)) * barW;
-    ctx.fillStyle = report.ratio >= 100 ? "#F0575C" : "#F59E0B";
+    const pctWidth = Math.max(0, Math.min(1, cur.ratio / 100)) * barW;
+    ctx.fillStyle = cur.ratio >= 100 ? "#F0575C" : "#F59E0B";
     ctx.beginPath();
     ctx.roundRect ? ctx.roundRect(cardX + 50, y, pctWidth, 18, 9) : ctx.rect(cardX + 50, y, pctWidth, 18);
     ctx.fill();
-    y += 50;
+    y += 46;
     ctx.textAlign = "center";
     ctx.font = `600 22px ${FONT}`;
-    ctx.fillStyle = report.surplus >= 0 ? "#00953F" : "#F0575C";
-    const summaryText = report.surplus >= 0 ? `รายจ่ายคิดเป็น ${Math.round(report.ratio)}% ของรายได้ — เหลือเก็บ ${thb(report.surplus)} ฿` : `รายจ่ายคิดเป็น ${Math.round(report.ratio)}% ของรายได้ — ขาดทุน ${thb(Math.abs(report.surplus))} ฿`;
+    ctx.fillStyle = cur.surplus >= 0 ? "#00953F" : "#F0575C";
+    const summaryText = cur.surplus >= 0 ? `รายจ่ายคิดเป็น ${Math.round(cur.ratio)}% ของรายได้ — เหลือเก็บ ${thb(cur.surplus)} ฿` : `รายจ่ายคิดเป็น ${Math.round(cur.ratio)}% ของรายได้ — ขาดทุน ${thb(Math.abs(cur.surplus))} ฿`;
     ctx.fillText(summaryText, cardX + cardW / 2, y);
-    y += 60;
-    ctx.textAlign = "left";
-    ctx.strokeStyle = "#E7EBE9";
-    ctx.beginPath();
-    ctx.moveTo(cardX + 50, y);
-    ctx.lineTo(cardX + cardW - 50, y);
-    ctx.stroke();
-    y += 50;
-    const rows = [["กำไรจากค่าโดยสาร Grab", report.monthProfit]];
-    if (report.monthExtraIncome > 0) rows.push(["รายได้พิเศษ", report.monthExtraIncome]);
-    rows.push(["รายจ่ายทั่วไป (เดือนนั้น)", report.monthDailyExp]);
-    rows.push(["รายจ่ายรายเดือน (คงที่)", report.fixedTotal]);
-    ctx.font = `400 22px ${FONT}`;
-    rows.forEach(([label, value]) => {
-      ctx.fillStyle = "#6B7570";
+    const sectionDivider = () => {
+      y += 44;
+      ctx.strokeStyle = "#E7EBE9";
+      ctx.beginPath();
+      ctx.moveTo(cardX + 50, y);
+      ctx.lineTo(cardX + cardW - 50, y);
+      ctx.stroke();
+      y += 40;
+    };
+    const drawRow = (label, value, faint) => {
       ctx.textAlign = "left";
+      ctx.font = `400 ${faint ? 19 : 22}px ${FONT}`;
+      ctx.fillStyle = faint ? "#9AA39D" : "#6B7570";
       ctx.fillText(label, cardX + 50, y);
-      ctx.fillStyle = "#14181A";
       ctx.textAlign = "right";
-      ctx.font = `600 22px 'JetBrains Mono', monospace`;
+      ctx.font = `600 ${faint ? 19 : 22}px ${MONO}`;
+      ctx.fillStyle = faint ? "#9AA39D" : "#14181A";
       ctx.fillText(`${thb(value)} ฿`, cardX + cardW - 50, y);
-      ctx.font = `400 22px ${FONT}`;
-      y += 46;
+      y += faint ? 36 : 44;
+    };
+    sectionDivider();
+    ctx.textAlign = "left";
+    ctx.font = `600 20px ${FONT}`;
+    ctx.fillStyle = "#14181A";
+    ctx.fillText("รายได้", cardX + 50, y);
+    y += 40;
+    drawRow("กำไรจาก Grab", cur.grabProfit, false);
+    drawRow("— รายได้ Grab ก่อนหักต้นทุน", cur.grabIncome, true);
+    if (cur.extraIncomeTotal > 0) drawRow("รายได้พิเศษ", cur.extraIncomeTotal, false);
+    sectionDivider();
+    ctx.textAlign = "left";
+    ctx.font = `600 20px ${FONT}`;
+    ctx.fillStyle = "#14181A";
+    ctx.fillText("รายจ่าย", cardX + 50, y);
+    y += 40;
+    drawRow("รายจ่ายรายเดือน (คงที่)", cur.fixedTotal, false);
+    drawRow("รายจ่ายทั่วไปรวม", cur.dailyExpenseTotal, false);
+    catRows.forEach(([cat, amt]) => drawRow(`— ${cat}`, amt, true));
+    sectionDivider();
+    ctx.textAlign = "left";
+    ctx.font = `600 20px ${FONT}`;
+    ctx.fillStyle = "#14181A";
+    ctx.fillText("เทียบกับเดือนที่แล้ว", cardX + 50, y);
+    y += 40;
+    const drawCompareRow = (label, prevV, curV) => {
+      ctx.textAlign = "left";
+      ctx.font = `400 20px ${FONT}`;
+      ctx.fillStyle = "#6B7570";
+      ctx.fillText(label, cardX + 50, y);
+      ctx.textAlign = "right";
+      ctx.font = `600 20px ${MONO}`;
+      ctx.fillStyle = "#14181A";
+      ctx.fillText(`${thb(prevV)} → ${thb(curV)} ฿`, cardX + cardW - 50, y);
+      y += 40;
+    };
+    drawCompareRow("รายได้รวม", prev.totalIncome, cur.totalIncome);
+    drawCompareRow("รายจ่ายรวม", prev.totalExpense, cur.totalExpense);
+    drawCompareRow("เหลือเก็บ/ขาดทุน", prev.surplus, cur.surplus);
+    if (changedCats.length > 0) {
+      sectionDivider();
+      ctx.textAlign = "left";
+      ctx.font = `600 20px ${FONT}`;
+      ctx.fillStyle = "#14181A";
+      ctx.fillText("รายจ่ายที่เปลี่ยนไปมากสุด", cardX + 50, y);
+      y += 40;
+      changedCats.forEach(c => {
+        ctx.textAlign = "left";
+        ctx.font = `400 20px ${FONT}`;
+        ctx.fillStyle = "#6B7570";
+        ctx.fillText(c.category, cardX + 50, y);
+        ctx.textAlign = "right";
+        ctx.font = `600 20px ${MONO}`;
+        ctx.fillStyle = c.delta > 0 ? "#F0575C" : "#00953F";
+        ctx.fillText(`${c.delta > 0 ? "+" : ""}${thb(c.delta)} ฿`, cardX + cardW - 50, y);
+        y += 40;
+      });
+    }
+    sectionDivider();
+    ctx.textAlign = "left";
+    ctx.font = `600 20px ${FONT}`;
+    ctx.fillStyle = "#14181A";
+    ctx.fillText("💡 ข้อสังเกตและคำแนะนำ", cardX + 50, y);
+    y += 38;
+    ctx.font = `400 18px ${FONT}`;
+    ctx.fillStyle = "#6B7570";
+    insights.forEach(tip => {
+      const maxWidth = cardW - 100;
+      const words = tip.split(" ");
+      let line = "";
+      words.forEach(w => {
+        const test = line + w + " ";
+        if (ctx.measureText(test).width > maxWidth && line) {
+          ctx.fillText(line, cardX + 50, y);
+          y += 26;
+          line = w + " ";
+        } else {
+          line = test;
+        }
+      });
+      if (line) {
+        ctx.fillText(line, cardX + 50, y);
+        y += 26;
+      }
+      y += 10;
     });
     ctx.textAlign = "center";
     ctx.font = `400 16px ${FONT}`;
@@ -582,7 +672,7 @@ const saveMonthlyReportImage = report => {
       const url = URL.createObjectURL(blob);
       const a = document.createElement("a");
       a.href = url;
-      a.download = `สรุปรายเดือน-${report.ym}.png`;
+      a.download = `สรุปรายเดือน-${cur.ym}.png`;
       document.body.appendChild(a);
       a.click();
       document.body.removeChild(a);
@@ -1693,6 +1783,96 @@ function GrabProfitMeter() {
       } catch (e) {}
     })();
   }, [fixedExpenses, loaded]);
+  const computeMonthlyReportData = ym => {
+    const d = new Date(ym + "-01T00:00:00");
+    d.setMonth(d.getMonth() - 1);
+    const prevYm = toLocalISO(d).slice(0, 7);
+    const buildMonthStats = targetYm => {
+      const monthEntries = entries.filter(e => e.date.slice(0, 7) === targetYm);
+      const grabProfit = monthEntries.reduce((a, e) => a + (e.profit || 0), 0);
+      const grabIncome = monthEntries.reduce((a, e) => a + (e.totalIncome ?? e.income ?? 0), 0);
+      const fuelCost = monthEntries.reduce((a, e) => a + (e.fuelCost || 0), 0);
+      const insuranceCost = monthEntries.reduce((a, e) => a + (e.insuranceCost || 0), 0);
+      const incentiveTax = monthEntries.reduce((a, e) => a + (e.incentiveTax || 0), 0);
+      const vehicleMaintenance = monthEntries.reduce((a, e) => a + (e.maintenanceCost || 0), 0);
+      const extraIncomeTotal = extraIncome.filter(e => e.date.slice(0, 7) === targetYm).reduce((a, e) => a + (e.amount || 0), 0);
+      const monthDailyExpenses = dailyExpenses.filter(e => e.date.slice(0, 7) === targetYm);
+      const dailyExpenseTotal = monthDailyExpenses.reduce((a, e) => a + (e.amount || 0), 0);
+      const byCategory = {};
+      monthDailyExpenses.forEach(e => {
+        byCategory[e.category] = (byCategory[e.category] || 0) + (e.amount || 0);
+      });
+      const fixedTotal = fixedExpenses.reduce((a, e) => a + (e.amount || 0), 0);
+      const totalIncome = grabProfit + extraIncomeTotal;
+      const totalExpense = dailyExpenseTotal + fixedTotal;
+      return {
+        ym: targetYm,
+        grabProfit,
+        grabIncome,
+        fuelCost,
+        insuranceCost,
+        incentiveTax,
+        vehicleMaintenance,
+        extraIncomeTotal,
+        dailyExpenseTotal,
+        byCategory,
+        fixedTotal,
+        totalIncome,
+        totalExpense,
+        surplus: totalIncome - totalExpense,
+        ratio: totalIncome > 0 ? totalExpense / totalIncome * 100 : totalExpense > 0 ? 100 : 0,
+        daysLogged: monthEntries.length
+      };
+    };
+    const cur = buildMonthStats(ym);
+    const prev = buildMonthStats(prevYm);
+    const pctChange = (curV, prevV) => {
+      if (prevV === 0) return curV === 0 ? 0 : null;
+      return (curV - prevV) / Math.abs(prevV) * 100;
+    };
+    const allCategories = new Set([...Object.keys(cur.byCategory), ...Object.keys(prev.byCategory)]);
+    const categoryDeltas = [...allCategories].map(cat => {
+      const curAmt = cur.byCategory[cat] || 0;
+      const prevAmt = prev.byCategory[cat] || 0;
+      return {
+        category: cat,
+        curAmt,
+        prevAmt,
+        delta: curAmt - prevAmt,
+        pct: pctChange(curAmt, prevAmt)
+      };
+    }).sort((a, b) => Math.abs(b.delta) - Math.abs(a.delta));
+    const insights = [];
+    if (cur.totalExpense > cur.totalIncome) {
+      insights.push(`⚠️ เดือนนี้รายจ่ายรวม (${thb(cur.totalExpense)} บาท) มากกว่ารายได้รวม (${thb(cur.totalIncome)} บาท) — ใช้เงินเก็บ/สำรองไปแล้ว ${thb(cur.totalExpense - cur.totalIncome)} บาท`);
+    }
+    const incomeChangePct = pctChange(cur.totalIncome, prev.totalIncome);
+    if (incomeChangePct !== null && Math.abs(incomeChangePct) >= 5) {
+      insights.push(incomeChangePct > 0 ? `📈 รายได้รวมเพิ่มขึ้น ${Math.round(incomeChangePct)}% จากเดือนที่แล้ว (+${thb(cur.totalIncome - prev.totalIncome)} บาท)` : `📉 รายได้รวมลดลง ${Math.round(Math.abs(incomeChangePct))}% จากเดือนที่แล้ว (${thb(cur.totalIncome - prev.totalIncome)} บาท)`);
+    }
+    const topCategoryIncrease = categoryDeltas.find(c => c.delta > 100);
+    if (topCategoryIncrease) {
+      insights.push(`🔎 "${topCategoryIncrease.category}" ใช้เพิ่มขึ้นมากสุด +${thb(topCategoryIncrease.delta)} บาทจากเดือนที่แล้ว (${thb(topCategoryIncrease.prevAmt)} → ${thb(topCategoryIncrease.curAmt)}) ลองดูว่าลดได้ไหม`);
+    }
+    const topCategoryDecrease = categoryDeltas.find(c => c.delta < -100);
+    if (topCategoryDecrease) {
+      insights.push(`✅ "${topCategoryDecrease.category}" ใช้ลดลง ${thb(Math.abs(topCategoryDecrease.delta))} บาทจากเดือนที่แล้ว ทำได้ดีมาก`);
+    }
+    if (cur.ratio >= 90 && cur.totalIncome > 0) {
+      insights.push(`💡 รายจ่ายกินสัดส่วนถึง ${Math.round(cur.ratio)}% ของรายได้แล้ว เหลือเก็บได้น้อยมาก ลองหารายได้เสริมหรือลดรายจ่ายที่ไม่จำเป็นดู`);
+    } else if (cur.ratio > 0 && cur.ratio < 50) {
+      insights.push(`🎉 รายจ่ายกินแค่ ${Math.round(cur.ratio)}% ของรายได้ เก็บเงินได้ดีมากเดือนนี้`);
+    }
+    if (insights.length === 0) {
+      insights.push("ภาพรวมเดือนนี้ใกล้เคียงเดือนที่แล้ว ไม่มีอะไรผิดปกติน่าเป็นห่วง");
+    }
+    return {
+      cur,
+      prev,
+      categoryDeltas,
+      insights
+    };
+  };
   useEffect(() => {
     if (!loaded) return;
     const today = todayISO();
@@ -1703,27 +1883,8 @@ function GrabProfitMeter() {
     const d = new Date(today + "T00:00:00");
     d.setMonth(d.getMonth() - 1);
     const prevYM = toLocalISO(d).slice(0, 7);
-    const monthEntries = entries.filter(e => e.date.slice(0, 7) === prevYM);
-    const monthProfit = monthEntries.reduce((a, e) => a + (e.profit || 0), 0);
-    const monthIncome = monthEntries.reduce((a, e) => a + (e.totalIncome ?? e.income ?? 0), 0);
-    const monthExtraIncome = extraIncome.filter(e => e.date.slice(0, 7) === prevYM).reduce((a, e) => a + (e.amount || 0), 0);
-    const monthDailyExp = dailyExpenses.filter(e => e.date.slice(0, 7) === prevYM).reduce((a, e) => a + (e.amount || 0), 0);
-    const fixedTotal = fixedExpenses.reduce((a, e) => a + (e.amount || 0), 0);
-    const totalExpense = monthDailyExp + fixedTotal;
-    const totalIncomeAllSources = monthProfit + monthExtraIncome;
-    const ratio = totalIncomeAllSources > 0 ? totalExpense / totalIncomeAllSources * 100 : totalExpense > 0 ? 100 : 0;
-    if (monthEntries.length > 0 || monthDailyExp > 0 || monthExtraIncome > 0) {
-      const reportData = {
-        ym: prevYM,
-        monthProfit,
-        monthIncome,
-        monthExtraIncome,
-        monthDailyExp,
-        fixedTotal,
-        totalExpense,
-        ratio,
-        surplus: totalIncomeAllSources - totalExpense
-      };
+    const reportData = computeMonthlyReportData(prevYM);
+    if (reportData.cur.daysLogged > 0 || reportData.cur.dailyExpenseTotal > 0 || reportData.cur.extraIncomeTotal > 0) {
       setMonthlyReportData(reportData);
       setShowMonthlyReport(true);
       saveMonthlyReportImage(reportData);
@@ -6736,7 +6897,7 @@ function GrabProfitMeter() {
     className: "w-full max-w-sm rounded-2xl p-4",
     style: {
       background: C.panel,
-      maxHeight: "85vh",
+      maxHeight: "88vh",
       overflowY: "auto"
     },
     onClick: e => e.stopPropagation()
@@ -6747,7 +6908,7 @@ function GrabProfitMeter() {
     style: {
       color: C.text
     }
-  }, "📊 สรุปรายเดือน ", monthLabelThaiLong(monthlyReportData.ym)), React.createElement("button", {
+  }, "📊 สรุปรายเดือน ", monthLabelThaiLong(monthlyReportData.cur.ym)), React.createElement("button", {
     onClick: () => setShowMonthlyReport(false),
     className: "p-1",
     "aria-label": "ปิด",
@@ -6762,7 +6923,7 @@ function GrabProfitMeter() {
     style: {
       color: C.textFaint
     }
-  }, "รายได้เทียบรายจ่ายของเดือนที่แล้ว — บันทึกเป็นรูปภาพลงเครื่องให้อัตโนมัติแล้ว"), React.createElement("button", {
+  }, "เทียบกับเดือน ", monthLabelThaiLong(monthlyReportData.prev.ym), " — บันทึกเป็นรูปภาพลงเครื่องให้อัตโนมัติแล้ว"), React.createElement("button", {
     onClick: () => saveMonthlyReportImage(monthlyReportData),
     className: "mb-3 w-full rounded-lg py-2 text-xs font-semibold",
     style: {
@@ -6777,13 +6938,13 @@ function GrabProfitMeter() {
     style: {
       color: C.textFaint
     }
-  }, "กำไรจาก Grab"), React.createElement("div", {
+  }, "รายได้รวมทุกทาง"), React.createElement("div", {
     className: "text-xl font-bold",
     style: {
       color: C.green,
       fontFamily: "'JetBrains Mono', monospace"
     }
-  }, thb(monthlyReportData.monthProfit), " ฿")), React.createElement("div", null, React.createElement("div", {
+  }, thb(monthlyReportData.cur.totalIncome), " ฿")), React.createElement("div", null, React.createElement("div", {
     className: "text-[11px]",
     style: {
       color: C.textFaint
@@ -6794,7 +6955,7 @@ function GrabProfitMeter() {
       color: C.red,
       fontFamily: "'JetBrains Mono', monospace"
     }
-  }, thb(monthlyReportData.totalExpense), " ฿"))), React.createElement("div", {
+  }, thb(monthlyReportData.cur.totalExpense), " ฿"))), React.createElement("div", {
     className: "mb-1.5 h-3 w-full overflow-hidden rounded-full",
     style: {
       background: C.bgSoft
@@ -6802,32 +6963,48 @@ function GrabProfitMeter() {
   }, React.createElement("div", {
     className: "h-full rounded-full",
     style: {
-      width: `${Math.min(100, monthlyReportData.ratio)}%`,
-      background: monthlyReportData.ratio >= 100 ? C.red : C.amber,
+      width: `${Math.min(100, monthlyReportData.cur.ratio)}%`,
+      background: monthlyReportData.cur.ratio >= 100 ? C.red : C.amber,
       transition: "width 0.4s ease"
     }
   })), React.createElement("div", {
     className: "mb-3 text-center text-xs font-medium",
     style: {
-      color: monthlyReportData.surplus >= 0 ? C.greenDeep : C.red
+      color: monthlyReportData.cur.surplus >= 0 ? C.greenDeep : C.red
     }
-  }, "รายจ่ายคิดเป็น ", Math.round(monthlyReportData.ratio), "% ของกำไร —", " ", monthlyReportData.surplus >= 0 ? `เหลือเก็บ ${thb(monthlyReportData.surplus)} ฿` : `ขาดทุน ${thb(Math.abs(monthlyReportData.surplus))} ฿`), React.createElement("div", {
-    className: "flex flex-col gap-1.5 rounded-lg p-3",
+  }, "รายจ่ายคิดเป็น ", Math.round(monthlyReportData.cur.ratio), "% ของรายได้ —", " ", monthlyReportData.cur.surplus >= 0 ? `เหลือเก็บ ${thb(monthlyReportData.cur.surplus)} ฿` : `ขาดทุน ${thb(Math.abs(monthlyReportData.cur.surplus))} ฿`), React.createElement("div", {
+    className: "mb-3 flex flex-col gap-1.5 rounded-lg p-3",
     style: {
       background: C.bgSoft
     }
   }, React.createElement("div", {
+    className: "mb-0.5 text-[11px] font-semibold",
+    style: {
+      color: C.text
+    }
+  }, "รายได้"), React.createElement("div", {
     className: "flex items-center justify-between text-xs"
   }, React.createElement("span", {
     style: {
       color: C.textMuted
     }
-  }, "กำไรจากค่าโดยสาร Grab"), React.createElement("span", {
+  }, "กำไรจาก Grab (หลังหักต้นทุน)"), React.createElement("span", {
     style: {
       color: C.text,
       fontFamily: "'JetBrains Mono', monospace"
     }
-  }, thb(monthlyReportData.monthProfit), " ฿")), monthlyReportData.monthExtraIncome > 0 && React.createElement("div", {
+  }, thb(monthlyReportData.cur.grabProfit), " ฿")), React.createElement("div", {
+    className: "flex items-center justify-between text-[11px]"
+  }, React.createElement("span", {
+    style: {
+      color: C.textFaint
+    }
+  }, "— รายได้ Grab ก่อนหักต้นทุน"), React.createElement("span", {
+    style: {
+      color: C.textFaint,
+      fontFamily: "'JetBrains Mono', monospace"
+    }
+  }, thb(monthlyReportData.cur.grabIncome), " ฿")), monthlyReportData.cur.extraIncomeTotal > 0 && React.createElement("div", {
     className: "flex items-center justify-between text-xs"
   }, React.createElement("span", {
     style: {
@@ -6838,21 +7015,17 @@ function GrabProfitMeter() {
       color: C.text,
       fontFamily: "'JetBrains Mono', monospace"
     }
-  }, thb(monthlyReportData.monthExtraIncome), " ฿")), React.createElement("div", {
-    className: "mt-1 flex items-center justify-between border-t pt-1.5 text-xs",
+  }, thb(monthlyReportData.cur.extraIncomeTotal), " ฿"))), React.createElement("div", {
+    className: "mb-3 flex flex-col gap-1.5 rounded-lg p-3",
     style: {
-      borderColor: C.hairline
+      background: C.bgSoft
     }
-  }, React.createElement("span", {
+  }, React.createElement("div", {
+    className: "mb-0.5 text-[11px] font-semibold",
     style: {
-      color: C.textMuted
+      color: C.text
     }
-  }, "รายจ่ายทั่วไป (เดือนนั้น)"), React.createElement("span", {
-    style: {
-      color: C.text,
-      fontFamily: "'JetBrains Mono', monospace"
-    }
-  }, thb(monthlyReportData.monthDailyExp), " ฿")), React.createElement("div", {
+  }, "รายจ่าย"), React.createElement("div", {
     className: "flex items-center justify-between text-xs"
   }, React.createElement("span", {
     style: {
@@ -6863,7 +7036,125 @@ function GrabProfitMeter() {
       color: C.text,
       fontFamily: "'JetBrains Mono', monospace"
     }
-  }, thb(monthlyReportData.fixedTotal), " ฿"))))), !chatOpen && React.createElement("button", {
+  }, thb(monthlyReportData.cur.fixedTotal), " ฿")), React.createElement("div", {
+    className: "flex items-center justify-between text-xs"
+  }, React.createElement("span", {
+    style: {
+      color: C.textMuted
+    }
+  }, "รายจ่ายทั่วไปรวม"), React.createElement("span", {
+    style: {
+      color: C.text,
+      fontFamily: "'JetBrains Mono', monospace"
+    }
+  }, thb(monthlyReportData.cur.dailyExpenseTotal), " ฿")), Object.entries(monthlyReportData.cur.byCategory).sort((a, b) => b[1] - a[1]).map(([cat, amt]) => React.createElement("div", {
+    key: cat,
+    className: "flex items-center justify-between text-[11px]"
+  }, React.createElement("span", {
+    style: {
+      color: C.textFaint
+    }
+  }, "— ", cat), React.createElement("span", {
+    style: {
+      color: C.textFaint,
+      fontFamily: "'JetBrains Mono', monospace"
+    }
+  }, thb(amt), " ฿"))), React.createElement("div", {
+    className: "mt-1 flex items-center justify-between border-t pt-1.5 text-[11px]",
+    style: {
+      borderColor: C.hairline
+    }
+  }, React.createElement("span", {
+    style: {
+      color: C.textFaint
+    }
+  }, "ค่าน้ำมัน/ไฟ + ประกัน + ซ่อมบำรุง (รวมในกำไร Grab แล้ว)"), React.createElement("span", {
+    style: {
+      color: C.textFaint,
+      fontFamily: "'JetBrains Mono', monospace"
+    }
+  }, thb(monthlyReportData.cur.fuelCost + monthlyReportData.cur.insuranceCost + monthlyReportData.cur.vehicleMaintenance), " ฿"))), React.createElement("div", {
+    className: "mb-3 flex flex-col gap-1.5 rounded-lg p-3",
+    style: {
+      background: C.bgSoft
+    }
+  }, React.createElement("div", {
+    className: "mb-0.5 text-[11px] font-semibold",
+    style: {
+      color: C.text
+    }
+  }, "เทียบกับเดือนที่แล้ว"), React.createElement("div", {
+    className: "flex items-center justify-between text-xs"
+  }, React.createElement("span", {
+    style: {
+      color: C.textMuted
+    }
+  }, "รายได้รวม"), React.createElement("span", {
+    style: {
+      color: C.text,
+      fontFamily: "'JetBrains Mono', monospace"
+    }
+  }, thb(monthlyReportData.prev.totalIncome), " → ", thb(monthlyReportData.cur.totalIncome), " ฿")), React.createElement("div", {
+    className: "flex items-center justify-between text-xs"
+  }, React.createElement("span", {
+    style: {
+      color: C.textMuted
+    }
+  }, "รายจ่ายรวม"), React.createElement("span", {
+    style: {
+      color: C.text,
+      fontFamily: "'JetBrains Mono', monospace"
+    }
+  }, thb(monthlyReportData.prev.totalExpense), " → ", thb(monthlyReportData.cur.totalExpense), " ฿")), React.createElement("div", {
+    className: "flex items-center justify-between text-xs"
+  }, React.createElement("span", {
+    style: {
+      color: C.textMuted
+    }
+  }, "เหลือเก็บ/ขาดทุน"), React.createElement("span", {
+    style: {
+      color: monthlyReportData.cur.surplus >= monthlyReportData.prev.surplus ? C.greenDeep : C.red,
+      fontFamily: "'JetBrains Mono', monospace"
+    }
+  }, thb(monthlyReportData.prev.surplus), " → ", thb(monthlyReportData.cur.surplus), " ฿"))), monthlyReportData.categoryDeltas.filter(c => Math.abs(c.delta) >= 1).length > 0 && React.createElement("div", {
+    className: "mb-3 flex flex-col gap-1.5 rounded-lg p-3",
+    style: {
+      background: C.bgSoft
+    }
+  }, React.createElement("div", {
+    className: "mb-0.5 text-[11px] font-semibold",
+    style: {
+      color: C.text
+    }
+  }, "รายจ่ายทั่วไปที่เปลี่ยนไปมากสุด"), monthlyReportData.categoryDeltas.filter(c => Math.abs(c.delta) >= 1).slice(0, 4).map(c => React.createElement("div", {
+    key: c.category,
+    className: "flex items-center justify-between text-xs"
+  }, React.createElement("span", {
+    style: {
+      color: C.textMuted
+    }
+  }, c.category), React.createElement("span", {
+    style: {
+      color: c.delta > 0 ? C.red : C.greenDeep,
+      fontFamily: "'JetBrains Mono', monospace"
+    }
+  }, c.delta > 0 ? "+" : "", thb(c.delta), " ฿")))), React.createElement("div", {
+    className: "flex flex-col gap-2 rounded-lg p-3",
+    style: {
+      background: C.greenDim
+    }
+  }, React.createElement("div", {
+    className: "text-[11px] font-semibold",
+    style: {
+      color: C.text
+    }
+  }, "💡 ข้อสังเกตและคำแนะนำ"), monthlyReportData.insights.map((tip, i) => React.createElement("p", {
+    key: i,
+    className: "text-[11px] leading-relaxed",
+    style: {
+      color: C.text
+    }
+  }, tip))))), !chatOpen && React.createElement("button", {
     onClick: () => setChatOpen(true),
     className: "fixed bottom-5 right-5 z-40 flex h-14 w-14 items-center justify-center rounded-full shadow-lg",
     style: {
