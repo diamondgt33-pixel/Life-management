@@ -1595,6 +1595,36 @@ function GrabProfitMeter() {
     if (!loaded) return;
     setEntries(prevEntries => {
       let changed = false;
+      const updated = prevEntries.map(e => {
+        const correctTax = Math.round(((e.incentive || 0) + (e.turboBonus || 0)) * 0.03 * 100) / 100;
+        const oldTax = e.incentiveTax || 0;
+        if (Math.abs(correctTax - oldTax) < 0.005) return e;
+        changed = true;
+        const diff = correctTax - oldTax;
+        return {
+          ...e,
+          incentiveTax: correctTax,
+          totalCost: Math.round(((e.totalCost || 0) + diff) * 100) / 100,
+          profit: Math.round(((e.profit || 0) - diff) * 100) / 100
+        };
+      });
+      if (changed) {
+        (async () => {
+          try {
+            await window.storage.set("daily-entries", JSON.stringify(updated), false);
+          } catch (err) {
+            console.error("Incentive+turbo tax reconciliation failed", err);
+          }
+        })();
+        return updated;
+      }
+      return prevEntries;
+    });
+  }, [loaded]);
+  useEffect(() => {
+    if (!loaded) return;
+    setEntries(prevEntries => {
+      let changed = false;
       const workDates = prevEntries.filter(e => (e.income || 0) > 0).map(e => e.date);
       const segments = buildMaintenanceCostByDate(workDates, maintenanceRecords);
       const updated = prevEntries.map(e => {
@@ -1929,7 +1959,7 @@ function GrabProfitMeter() {
   const commissionCost = 0;
   const insuranceCost = income > 0 ? insuranceCostPerDay || 0 : 0;
   const INCENTIVE_TAX_RATE = 0.03;
-  const incentiveTax = Math.round((incentive || 0) * INCENTIVE_TAX_RATE * 100) / 100;
+  const incentiveTax = Math.round(((incentive || 0) + (turboBonus || 0)) * INCENTIVE_TAX_RATE * 100) / 100;
   const maintenanceCostToday = (() => {
     if (income <= 0) return 0;
     const workDates = entries.filter(e => (e.income || 0) > 0 && e.date !== date).map(e => e.date);
@@ -2180,7 +2210,7 @@ function GrabProfitMeter() {
       "ค่าน้ำมัน/ค่าไฟ": e.fuelCost || 0,
       "ลิตร/kWh": e.fuelLiters || 0,
       ค่าประกัน: Math.round((e.insuranceCost || 0) * 100) / 100,
-      "ภาษีอินเซนทีฟ 3%": Math.round((e.incentiveTax || 0) * 100) / 100,
+      "ภาษีอินเซนทีฟ+เทอร์โบ 3%": Math.round((e.incentiveTax || 0) * 100) / 100,
       ค่าซ่อมบำรุงเฉลี่ย: Math.round((e.maintenanceCost || 0) * 100) / 100,
       ค่าใช้จ่ายอื่น: e.otherCost || 0,
       หมายเหตุ: e.otherLabel || "",
@@ -3406,7 +3436,7 @@ function GrabProfitMeter() {
       value: periodSummary.insuranceCost,
       color: C.blue
     }, {
-      label: "ภาษีอินเซนทีฟ 3%",
+      label: "ภาษีอินเซนทีฟ+เทอร์โบ 3%",
       value: periodSummary.incentiveTax,
       color: C.purple
     }, {
@@ -3490,7 +3520,7 @@ function GrabProfitMeter() {
       background: C.purple,
       display: "inline-block"
     }
-  }), "ภาษีอินเซนทีฟ 3% ", thb(periodSummary.incentiveTax), " ฿"), React.createElement("span", {
+  }), "ภาษีอินเซนทีฟ+เทอร์โบ 3% ", thb(periodSummary.incentiveTax), " ฿"), React.createElement("span", {
     className: "flex items-center gap-1.5"
   }, React.createElement("span", {
     style: {
@@ -3696,12 +3726,12 @@ function GrabProfitMeter() {
     value: turboBonus,
     onChange: setTurboBonus,
     placeholder: "0"
-  })), incentive > 0 && React.createElement("p", {
+  })), (incentive > 0 || turboBonus > 0) && React.createElement("p", {
     className: "text-[11px] leading-relaxed",
     style: {
       color: C.textFaint
     }
-  }, "หักภาษี ณ ที่จ่าย 3% จากอินเซนทีฟอัตโนมัติ (", thb(incentiveTax), " บาท) — เหลือรับจริงประมาณ ", thb(incentive - incentiveTax), " บาท"), turboBonus > 0 && React.createElement("div", {
+  }, "หักภาษี ณ ที่จ่าย 3% จากอินเซนทีฟ + โบนัสเทอร์โบอัตโนมัติ (", thb(incentiveTax), " บาท) — เหลือรับจริงรวมประมาณ", " ", thb(incentive + turboBonus - incentiveTax), " บาท"), turboBonus > 0 && React.createElement("div", {
     className: "mt-2.5 rounded-lg p-3",
     style: {
       background: C.amberDim
@@ -6622,7 +6652,7 @@ function GrabProfitMeter() {
     style: {
       background: C.bgSoft
     }
-  }, [["ค่าน้ำมัน", viewingDayDetail.fuelCost], ["ค่าประกัน", viewingDayDetail.insuranceCost], ["ภาษีอินเซนทีฟ 3%", viewingDayDetail.incentiveTax], ["ค่าใช้จ่ายอื่น", viewingDayDetail.otherCost]].filter(([, v]) => v).map(([label, v]) => React.createElement("div", {
+  }, [["ค่าน้ำมัน", viewingDayDetail.fuelCost], ["ค่าประกัน", viewingDayDetail.insuranceCost], ["ภาษีอินเซนทีฟ+เทอร์โบ 3%", viewingDayDetail.incentiveTax], ["ค่าใช้จ่ายอื่น", viewingDayDetail.otherCost]].filter(([, v]) => v).map(([label, v]) => React.createElement("div", {
     key: label,
     className: "flex items-center justify-between text-xs"
   }, React.createElement("span", {
