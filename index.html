@@ -693,23 +693,27 @@ const buildMaintenanceCostByDate = (workDates, maintenanceRecords) => {
     currentSegmentRate: 0
   };
   if (!maintenanceRecords || maintenanceRecords.length === 0) return result;
-  const byDateCost = {};
-  maintenanceRecords.forEach(r => {
-    byDateCost[r.date] = (byDateCost[r.date] || 0) + (r.cost || 0);
-  });
-  const recordDates = Object.keys(byDateCost).sort();
   const sortedWorkDates = [...new Set(workDates)].sort();
-  for (let i = 0; i < recordDates.length; i++) {
-    const segStart = recordDates[i];
-    const segEnd = i + 1 < recordDates.length ? recordDates[i + 1] : null;
-    const segCost = byDateCost[segStart];
-    const segWorkDays = sortedWorkDates.filter(d => d >= segStart && (segEnd === null || d < segEnd));
-    const perDay = segWorkDays.length > 0 ? Math.round(segCost / segWorkDays.length * 100) / 100 : 0;
-    segWorkDays.forEach(d => {
-      result.byDate[d] = perDay;
-    });
-    if (segEnd === null) result.currentSegmentRate = perDay;
-  }
+  const recordsByType = {};
+  maintenanceRecords.forEach(r => {
+    const type = r.type || "อื่นๆ";
+    if (!recordsByType[type]) recordsByType[type] = {};
+    recordsByType[type][r.date] = (recordsByType[type][r.date] || 0) + (r.cost || 0);
+  });
+  Object.values(recordsByType).forEach(byDateCost => {
+    const recordDates = Object.keys(byDateCost).sort();
+    for (let i = 0; i < recordDates.length; i++) {
+      const segStart = recordDates[i];
+      const segEnd = i + 1 < recordDates.length ? recordDates[i + 1] : null;
+      const segCost = byDateCost[segStart];
+      const segWorkDays = sortedWorkDates.filter(d => d >= segStart && (segEnd === null || d < segEnd));
+      const perDay = segWorkDays.length > 0 ? Math.round(segCost / segWorkDays.length * 100) / 100 : 0;
+      segWorkDays.forEach(d => {
+        result.byDate[d] = Math.round(((result.byDate[d] || 0) + perDay) * 100) / 100;
+      });
+      if (segEnd === null) result.currentSegmentRate = Math.round((result.currentSegmentRate + perDay) * 100) / 100;
+    }
+  });
   return result;
 };
 const mondayOf = iso => {
@@ -4895,15 +4899,19 @@ function GrabProfitMeter() {
     style: {
       color: C.textFaint
     }
-  }, "แต่ละรายการซ่อมจะถูกเฉลี่ยหารด้วยจำนวน \"วันที่มีรายได้\" นับจากวันที่ซ่อมนั้นๆ", " ", React.createElement("strong", {
+  }, "แต่ละ", React.createElement("strong", {
     style: {
       color: C.text
     }
-  }, "ไปจนถึงก่อนวันที่มีรายการซ่อมถัดไป"), " — พอมีรายการซ่อมใหม่เข้ามา ยอดเก่าจะ \"ปิด\" ทันที ไม่ถูกคำนวณต่อ แล้วเริ่มเฉลี่ยยอดใหม่จากตรงนั้นแทน ตอนนี้กำลังเฉลี่ยยอดล่าสุดอยู่ที่วันละ", " ", React.createElement("strong", {
+  }, "ประเภทงานซ่อม"), "จะเฉลี่ยแยกกันเป็นอิสระ (เช่น \"ล้างรถ\" กับ \"เปลี่ยนน้ำมันเครื่อง\" คนละรอบกัน ไม่ปนกัน) — ยอดของประเภทไหนจะหารด้วยจำนวน \"วันที่มีรายได้\" นับจากวันที่ซ่อมประเภทนั้น ไปจนถึงก่อนวันที่มีรายการซ่อม", React.createElement("strong", {
     style: {
       color: C.text
     }
-  }, thb(maintenanceSummary.perDay), " บาท"), " (ยังไม่ปิด จนกว่าจะมีรายการซ่อมใหม่)"), showMaintForm && React.createElement("div", {
+  }, "ประเภทเดียวกัน"), "ครั้งถัดไป พอมีรายการซ่อมประเภทเดิมเข้ามาใหม่ ยอดเก่าของประเภทนั้นจะ \"ปิด\" ทันที แล้วเริ่มเฉลี่ยยอดใหม่แทน ตอนนี้รวมทุกประเภทที่ยังไม่ปิดอยู่ที่วันละ", " ", React.createElement("strong", {
+    style: {
+      color: C.text
+    }
+  }, thb(maintenanceSummary.perDay), " บาท")), showMaintForm && React.createElement("div", {
     className: "mb-3 flex flex-col gap-2.5 row-in"
   }, React.createElement("div", {
     className: "grid grid-cols-2 gap-2.5"
