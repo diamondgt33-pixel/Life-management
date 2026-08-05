@@ -1540,6 +1540,7 @@ function GrabProfitMeter() {
   const [retagMonth, setRetagMonth] = useState(todayISO().slice(0, 7));
   const [retagWalletId, setRetagWalletId] = useState("");
   const [retagOverwrite, setRetagOverwrite] = useState(false);
+  const [showClearTransfersConfirm, setShowClearTransfersConfirm] = useState(false);
   const [transferAmounts, setTransferAmounts] = useState({});
   const [walletTransfers, setWalletTransfers] = useState([]);
   const [showExtraIncomeForm, setShowExtraIncomeForm] = useState(false);
@@ -2506,6 +2507,15 @@ function GrabProfitMeter() {
     }
     if (totalRetagged > 0) await adjustWalletBalance(retagWalletId, -totalRetagged);
     setShowRetagModal(false);
+  };
+  const clearWalletTransferHistory = async () => {
+    setSaveError("");
+    setWalletTransfers([]);
+    try {
+      await window.storage.set("wallet-transfers", JSON.stringify([]), false);
+    } catch (e) {
+      reportSaveError(e);
+    }
   };
   const addExtraIncome = async () => {
     setSaveError("");
@@ -6606,7 +6616,46 @@ function GrabProfitMeter() {
       color: C.blue
     },
     type: "button"
-  }, "🔧 กำหนดกระเป๋าย้อนหลังให้รายจ่ายทั่วไป")), React.createElement("div", {
+  }, "🔧 กำหนดกระเป๋าย้อนหลังให้รายจ่ายทั่วไป"), walletTransfers.length > 0 && React.createElement(React.Fragment, null, !showClearTransfersConfirm ? React.createElement("button", {
+    onClick: () => setShowClearTransfersConfirm(true),
+    className: "mt-2 w-full rounded-lg py-2 text-xs font-semibold",
+    style: {
+      background: C.bgSoft,
+      color: C.textFaint
+    },
+    type: "button"
+  }, "🧹 ล้างประวัติการโอน (ยอดกระเป๋าไม่เปลี่ยน)") : React.createElement("div", {
+    className: "mt-2 rounded-lg p-3",
+    style: {
+      background: C.redDim
+    }
+  }, React.createElement("p", {
+    className: "mb-2 text-[11px] leading-relaxed",
+    style: {
+      color: C.red
+    }
+  }, "ล้างประวัติการโอนทั้งหมด (ใช้ตอนยอด \"ยังไม่ได้จัดสรร\" ติดลบเพราะเคยโอนยอดเริ่มต้นเข้ากระเป๋าไปก่อนหน้า) — ยอดเงินในกระเป๋าแต่ละใบจะไม่เปลี่ยนแปลงเลย ยกเลิกไม่ได้หลังกดยืนยัน"), React.createElement("div", {
+    className: "flex gap-2"
+  }, React.createElement("button", {
+    onClick: () => setShowClearTransfersConfirm(false),
+    className: "flex-1 rounded-lg py-2 text-xs font-medium",
+    style: {
+      background: C.panel,
+      color: C.textMuted
+    },
+    type: "button"
+  }, "ยกเลิก"), React.createElement("button", {
+    onClick: () => {
+      clearWalletTransferHistory();
+      setShowClearTransfersConfirm(false);
+    },
+    className: "flex-1 rounded-lg py-2 text-xs font-semibold",
+    style: {
+      background: C.red,
+      color: "#FFFFFF"
+    },
+    type: "button"
+  }, "ยืนยันล้างประวัติ"))))), React.createElement("div", {
     className: "rounded-xl p-3.5",
     style: {
       background: dailyExpenseSummary.sufficient ? "var(--c-hero-green)" : "var(--c-hero-red)",
