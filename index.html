@@ -2580,6 +2580,7 @@ function GrabProfitMeter() {
       paidExpenses,
       wallets,
       walletTransfers,
+      walletPoolAdjustment,
       settings: {
         turboTiers,
         insuranceCostPerDay,
@@ -2750,6 +2751,11 @@ function GrabProfitMeter() {
           setWalletTransfers(merged);
           await window.storage.set("wallet-transfers", JSON.stringify(merged), false);
           restoredParts.push("ประวัติโอนกระเป๋า");
+        }
+        if (typeof parsed.walletPoolAdjustment === "number") {
+          setWalletPoolAdjustment(parsed.walletPoolAdjustment);
+          await window.storage.set("wallet-pool-adjustment", JSON.stringify(parsed.walletPoolAdjustment), false);
+          restoredParts.push("จุดเริ่มนับยังไม่ได้จัดสรร");
         }
         if (parsed.settings && typeof parsed.settings === "object") {
           const nextTurboTiers = Array.isArray(parsed.settings.turboTiers) ? parsed.settings.turboTiers : turboTiers;
@@ -6533,13 +6539,34 @@ function GrabProfitMeter() {
     style: {
       color: C.greenDeep
     }
-  }, "ยังไม่ได้จัดสรร เดือนนี้ (โอนเข้ากระเป๋าได้อีก)"), React.createElement("span", {
+  }, "ยังไม่ได้จัดสรร (สะสมทั้งหมด — โอนเข้ากระเป๋าได้อีก)"), React.createElement("span", {
     className: "text-xs font-semibold",
     style: {
       color: C.greenDeep,
       fontFamily: "'JetBrains Mono', monospace"
     }
-  }, thb(walletPool.unallocated), " ฿")), !showWalletManager && wallets.length > 0 && React.createElement("div", {
+  }, thb(walletPool.unallocated), " ฿")), React.createElement("div", {
+    className: "mb-2.5 flex items-center justify-between rounded-lg px-3 py-2",
+    style: {
+      background: C.bgSoft
+    }
+  }, React.createElement("span", {
+    className: "text-[11px]",
+    style: {
+      color: C.textFaint
+    }
+  }, "(เทียบ) กำไรจาก Grab เฉพาะเดือนนี้"), React.createElement("span", {
+    className: "text-xs font-semibold",
+    style: {
+      color: C.textFaint,
+      fontFamily: "'JetBrains Mono', monospace"
+    }
+  }, thb(forecast.monthSoFarProfit), " ฿")), React.createElement("p", {
+    className: "mb-2.5 text-[10px] leading-relaxed",
+    style: {
+      color: C.textFaint
+    }
+  }, "สองบรรทัดนี้ไม่จำเป็นต้องเท่ากัน — บรรทัดบนคือเงินสะสมทั้งหมดตั้งแต่เริ่มใช้แอปที่ยังไม่ได้จัดสรร บรรทัดล่างคือกำไรของเดือนนี้เดือนเดียว"), !showWalletManager && wallets.length > 0 && React.createElement("div", {
     className: "flex flex-col gap-1.5"
   }, wallets.map(w => React.createElement("div", {
     key: w.id,
@@ -7617,13 +7644,13 @@ function GrabProfitMeter() {
       style: {
         color: C.textFaint
       }
-    }, "เดือน ", monthLabelThaiLong(walletPool.ym)), React.createElement("div", {
+    }, "สะสมทั้งหมดตั้งแต่เริ่มใช้แอป"), React.createElement("div", {
       className: "flex items-center justify-between text-xs"
     }, React.createElement("span", {
       style: {
         color: C.textMuted
       }
-    }, "รายรับเดือนนี้"), React.createElement("span", {
+    }, "รายรับสะสมทั้งหมด"), React.createElement("span", {
       style: {
         color: C.text,
         fontFamily: "'JetBrains Mono', monospace"
@@ -7634,7 +7661,7 @@ function GrabProfitMeter() {
       style: {
         color: C.textMuted
       }
-    }, "จัดสรรไปแล้วเดือนนี้ (โอน+ตัดใช้)"), React.createElement("span", {
+    }, "จัดสรรไปแล้วสะสม (โอน+ตัดใช้)"), React.createElement("span", {
       style: {
         color: C.text,
         fontFamily: "'JetBrains Mono', monospace"
@@ -7653,7 +7680,12 @@ function GrabProfitMeter() {
         color: C.greenDeep,
         fontFamily: "'JetBrains Mono', monospace"
       }
-    }, thb(walletPool.unallocated), " ฿"))), React.createElement("div", {
+    }, thb(walletPool.unallocated), " ฿"))), React.createElement("p", {
+      className: "mb-3 text-[10px] leading-relaxed",
+      style: {
+        color: C.textFaint
+      }
+    }, "กำไรเฉพาะเดือนนี้ ", thb(forecast.monthSoFarProfit), " บาท (ตัวเลขข้างบนเป็นยอดสะสมทั้งหมด ไม่ใช่แค่เดือนนี้)"), React.createElement("div", {
       className: "flex flex-col gap-2.5"
     }, wallets.map(w => React.createElement("div", {
       key: w.id,
