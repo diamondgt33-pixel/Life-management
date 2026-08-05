@@ -1543,6 +1543,8 @@ function GrabProfitMeter() {
   const [showClearTransfersConfirm, setShowClearTransfersConfirm] = useState(false);
   const [transferAmounts, setTransferAmounts] = useState({});
   const [walletTransfers, setWalletTransfers] = useState([]);
+  const [walletPoolAdjustment, setWalletPoolAdjustment] = useState(0);
+  const [showResetPoolConfirm, setShowResetPoolConfirm] = useState(false);
   const [showExtraIncomeForm, setShowExtraIncomeForm] = useState(false);
   const [extraIncomeDate, setExtraIncomeDate] = useState(todayISO());
   const [extraIncomeAmount, setExtraIncomeAmount] = useState(0);
@@ -1632,6 +1634,10 @@ function GrabProfitMeter() {
       try {
         const wt = await window.storage.get("wallet-transfers", false);
         if (wt && wt.value) setWalletTransfers(JSON.parse(wt.value));
+      } catch (e) {}
+      try {
+        const wpa = await window.storage.get("wallet-pool-adjustment", false);
+        if (wpa && wpa.value) setWalletPoolAdjustment(JSON.parse(wpa.value));
       } catch (e) {}
       try {
         const pe = await window.storage.get("paid-expenses", false);
@@ -1966,16 +1972,18 @@ function GrabProfitMeter() {
     });
     const monthTransferred = manualTransfers + parkedFixedExpenses;
     const monthSpentFromCentral = centralDailyExpenses + centralMaintenance + centralFixedExpenses;
-    const unallocated = Math.round((lifetimeProfit + lifetimeExtraIncome - monthTransferred - monthSpentFromCentral) * 100) / 100;
+    const rawUnallocated = lifetimeProfit + lifetimeExtraIncome - monthTransferred - monthSpentFromCentral;
+    const unallocated = Math.round((rawUnallocated - walletPoolAdjustment) * 100) / 100;
     return {
       ym: todayISO().slice(0, 7),
       lifetimeProfit,
       lifetimeExtraIncome,
       lifetimeTransferred: monthTransferred,
       lifetimeSpentFromCentral: monthSpentFromCentral,
+      rawUnallocated,
       unallocated
     };
-  }, [entries, extraIncome, walletTransfers, dailyExpenses, maintenanceRecords, paidExpenses, fixedExpenses]);
+  }, [entries, extraIncome, walletTransfers, dailyExpenses, maintenanceRecords, paidExpenses, fixedExpenses, walletPoolAdjustment]);
   const addVehicle = () => {
     const id = `veh-${Date.now()}`;
     setVehicles(prev => [...prev, {
@@ -2514,6 +2522,16 @@ function GrabProfitMeter() {
     setWalletTransfers([]);
     try {
       await window.storage.set("wallet-transfers", JSON.stringify([]), false);
+    } catch (e) {
+      reportSaveError(e);
+    }
+  };
+  const resetUnallocatedToZero = async () => {
+    setSaveError("");
+    const newAdjustment = Math.round((walletPoolAdjustment + walletPool.rawUnallocated) * 100) / 100;
+    setWalletPoolAdjustment(newAdjustment);
+    try {
+      await window.storage.set("wallet-pool-adjustment", JSON.stringify(newAdjustment), false);
     } catch (e) {
       reportSaveError(e);
     }
@@ -6656,7 +6674,46 @@ function GrabProfitMeter() {
       color: "#FFFFFF"
     },
     type: "button"
-  }, "ยืนยันล้างประวัติ"))))), React.createElement("div", {
+  }, "ยืนยันล้างประวัติ")))), walletPool.unallocated !== 0 && React.createElement(React.Fragment, null, !showResetPoolConfirm ? React.createElement("button", {
+    onClick: () => setShowResetPoolConfirm(true),
+    className: "mt-2 w-full rounded-lg py-2 text-xs font-semibold",
+    style: {
+      background: C.bgSoft,
+      color: C.textFaint
+    },
+    type: "button"
+  }, "🔄 เริ่มนับ \"ยังไม่ได้จัดสรร\" ใหม่จาก 0") : React.createElement("div", {
+    className: "mt-2 rounded-lg p-3",
+    style: {
+      background: C.redDim
+    }
+  }, React.createElement("p", {
+    className: "mb-2 text-[11px] leading-relaxed",
+    style: {
+      color: C.red
+    }
+  }, "ตั้งยอด \"ยังไม่ได้จัดสรร\" ให้เป็น 0 ตอนนี้เลย (ปัจจุบัน ", thb(walletPool.unallocated), " บาท) — ไม่กระทบยอดกำไร/รายจ่ายที่บันทึกไว้เลย แค่เริ่มนับใหม่จากศูนย์ไปข้างหน้า รายได้/รายจ่ายใหม่หลังจากนี้จะขยับตัวเลขนี้ตามปกติ"), React.createElement("div", {
+    className: "flex gap-2"
+  }, React.createElement("button", {
+    onClick: () => setShowResetPoolConfirm(false),
+    className: "flex-1 rounded-lg py-2 text-xs font-medium",
+    style: {
+      background: C.panel,
+      color: C.textMuted
+    },
+    type: "button"
+  }, "ยกเลิก"), React.createElement("button", {
+    onClick: () => {
+      resetUnallocatedToZero();
+      setShowResetPoolConfirm(false);
+    },
+    className: "flex-1 rounded-lg py-2 text-xs font-semibold",
+    style: {
+      background: C.red,
+      color: "#FFFFFF"
+    },
+    type: "button"
+  }, "ยืนยันเริ่มนับใหม่"))))), React.createElement("div", {
     className: "rounded-xl p-3.5",
     style: {
       background: dailyExpenseSummary.sufficient ? "var(--c-hero-green)" : "var(--c-hero-red)",
