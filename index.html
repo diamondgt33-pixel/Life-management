@@ -1946,30 +1946,31 @@ function GrabProfitMeter() {
   const activeEnergyUnitShort = isActiveVehicleEV ? "kWh" : "ลิตร";
   const activeEfficiencyUnit = isActiveVehicleEV ? "กม./kWh" : "กม./ลิตร";
   const walletPool = useMemo(() => {
-    const thisMonth = todayISO().slice(0, 7);
-    const monthProfit = entries.filter(e => e.date.slice(0, 7) === thisMonth).reduce((a, e) => a + (e.profit || 0), 0);
-    const monthExtraIncome = extraIncome.filter(e => e.date.slice(0, 7) === thisMonth).reduce((a, e) => a + (e.amount || 0), 0);
-    const manualTransfers = walletTransfers.filter(t => t.date.slice(0, 7) === thisMonth).reduce((a, t) => a + (t.amount || 0), 0);
-    const centralDailyExpenses = dailyExpenses.filter(e => e.walletId === "central" && e.date.slice(0, 7) === thisMonth).reduce((a, e) => a + (e.amount || 0), 0);
-    const centralMaintenance = maintenanceRecords.filter(r => r.walletId === "central" && r.date.slice(0, 7) === thisMonth).reduce((a, r) => a + (r.cost || 0), 0);
+    const lifetimeProfit = entries.reduce((a, e) => a + (e.profit || 0), 0);
+    const lifetimeExtraIncome = extraIncome.reduce((a, e) => a + (e.amount || 0), 0);
+    const manualTransfers = walletTransfers.reduce((a, t) => a + (t.amount || 0), 0);
+    const centralDailyExpenses = dailyExpenses.filter(e => e.walletId === "central").reduce((a, e) => a + (e.amount || 0), 0);
+    const centralMaintenance = maintenanceRecords.filter(r => r.walletId === "central").reduce((a, r) => a + (r.cost || 0), 0);
     let centralFixedExpenses = 0;
     let parkedFixedExpenses = 0;
-    (paidExpenses[thisMonth] || []).forEach(id => {
-      const item = fixedExpenses.find(e => e.id === id);
-      if (!item) return;
-      if (item.walletId && item.walletId !== "central") {
-        parkedFixedExpenses += item.amount || 0;
-      } else {
-        centralFixedExpenses += item.amount || 0;
-      }
+    Object.values(paidExpenses).forEach(ids => {
+      ids.forEach(id => {
+        const item = fixedExpenses.find(e => e.id === id);
+        if (!item) return;
+        if (item.walletId && item.walletId !== "central") {
+          parkedFixedExpenses += item.amount || 0;
+        } else {
+          centralFixedExpenses += item.amount || 0;
+        }
+      });
     });
     const monthTransferred = manualTransfers + parkedFixedExpenses;
     const monthSpentFromCentral = centralDailyExpenses + centralMaintenance + centralFixedExpenses;
-    const unallocated = Math.round((monthProfit + monthExtraIncome - monthTransferred - monthSpentFromCentral) * 100) / 100;
+    const unallocated = Math.round((lifetimeProfit + lifetimeExtraIncome - monthTransferred - monthSpentFromCentral) * 100) / 100;
     return {
-      ym: thisMonth,
-      lifetimeProfit: monthProfit,
-      lifetimeExtraIncome: monthExtraIncome,
+      ym: todayISO().slice(0, 7),
+      lifetimeProfit,
+      lifetimeExtraIncome,
       lifetimeTransferred: monthTransferred,
       lifetimeSpentFromCentral: monthSpentFromCentral,
       unallocated
