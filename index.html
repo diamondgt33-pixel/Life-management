@@ -1536,6 +1536,10 @@ function GrabProfitMeter() {
   const [newWalletName, setNewWalletName] = useState("");
   const [dailyExpWalletId, setDailyExpWalletId] = useState("");
   const [showTransferModal, setShowTransferModal] = useState(false);
+  const [showRetagModal, setShowRetagModal] = useState(false);
+  const [retagMonth, setRetagMonth] = useState(todayISO().slice(0, 7));
+  const [retagWalletId, setRetagWalletId] = useState("");
+  const [retagOverwrite, setRetagOverwrite] = useState(false);
   const [transferAmounts, setTransferAmounts] = useState({});
   const [walletTransfers, setWalletTransfers] = useState([]);
   const [showExtraIncomeForm, setShowExtraIncomeForm] = useState(false);
@@ -2478,6 +2482,30 @@ function GrabProfitMeter() {
     }
     setTransferAmounts({});
     setShowTransferModal(false);
+  };
+  const retagExpensesToWallet = async () => {
+    if (!retagWalletId) return;
+    setSaveError("");
+    const latest = await readLatestArray("daily-expenses", dailyExpenses);
+    let totalRetagged = 0;
+    const next = latest.map(e => {
+      if (e.date.slice(0, 7) !== retagMonth) return e;
+      if (!retagOverwrite && e.walletId) return e;
+      totalRetagged += e.amount || 0;
+      return {
+        ...e,
+        walletId: retagWalletId
+      };
+    });
+    setDailyExpenses(next);
+    try {
+      await window.storage.set("daily-expenses", JSON.stringify(next), false);
+    } catch (e) {
+      reportSaveError(e);
+      return;
+    }
+    if (totalRetagged > 0) await adjustWalletBalance(retagWalletId, -totalRetagged);
+    setShowRetagModal(false);
   };
   const addExtraIncome = async () => {
     setSaveError("");
@@ -6570,7 +6598,15 @@ function GrabProfitMeter() {
       color: C.greenDeep
     },
     type: "button"
-  }, "💰 โอนเงินเข้ากระเป๋า")), React.createElement("div", {
+  }, "💰 โอนเงินเข้ากระเป๋า"), wallets.length > 0 && React.createElement("button", {
+    onClick: () => setShowRetagModal(true),
+    className: "mt-2 w-full rounded-lg py-2 text-xs font-semibold",
+    style: {
+      background: C.bgSoft,
+      color: C.blue
+    },
+    type: "button"
+  }, "🔧 กำหนดกระเป๋าย้อนหลังให้รายจ่ายทั่วไป")), React.createElement("div", {
     className: "rounded-xl p-3.5",
     style: {
       background: dailyExpenseSummary.sufficient ? "var(--c-hero-green)" : "var(--c-hero-red)",
@@ -7328,7 +7364,99 @@ function GrabProfitMeter() {
     style: {
       color: C.text
     }
-  }, viewingDayDetail.turboCount || 0), " รอบ")))), showTransferModal && React.createElement("div", {
+  }, viewingDayDetail.turboCount || 0), " รอบ")))), showRetagModal && React.createElement("div", {
+    className: "fixed inset-0 z-50 flex items-center justify-center p-5",
+    style: {
+      background: "rgba(0,0,0,0.55)"
+    },
+    onClick: () => setShowRetagModal(false)
+  }, React.createElement("div", {
+    className: "w-full max-w-sm rounded-2xl p-4",
+    style: {
+      background: C.panel
+    },
+    onClick: e => e.stopPropagation()
+  }, React.createElement("div", {
+    className: "mb-1 flex items-center justify-between"
+  }, React.createElement("span", {
+    className: "text-sm font-semibold",
+    style: {
+      color: C.text
+    }
+  }, "🔧 กำหนดกระเป๋าย้อนหลัง"), React.createElement("button", {
+    onClick: () => setShowRetagModal(false),
+    className: "p-1",
+    "aria-label": "ปิด",
+    type: "button"
+  }, React.createElement("span", {
+    style: {
+      fontSize: 16,
+      color: C.textFaint
+    }
+  }, "✕"))), React.createElement("p", {
+    className: "mb-3 text-[11px] leading-relaxed",
+    style: {
+      color: C.textFaint
+    }
+  }, "เอารายจ่ายทั่วไปของเดือนที่เลือก ไปผูกกับกระเป๋าที่เลือกให้ทั้งหมด (ยอดจะหักออกจากกระเป๋านั้นด้วย) เหมาะกับตอนเพิ่งเชื่อมกระเป๋าใหม่แต่มีรายจ่ายเก่าที่ยังไม่ได้ผูกไว้"), React.createElement("label", {
+    className: "mb-2.5 flex flex-col gap-1.5"
+  }, React.createElement("span", {
+    className: "text-xs",
+    style: {
+      color: C.textMuted
+    }
+  }, "เดือนที่จะแก้ไข"), React.createElement("input", {
+    type: "month",
+    value: retagMonth,
+    max: todayISO().slice(0, 7),
+    onChange: e => setRetagMonth(e.target.value),
+    className: "rounded-lg px-3 py-2.5 text-sm",
+    style: {
+      background: C.bgSoft,
+      color: C.text,
+      border: `1px solid ${C.hairline}`,
+      fontFamily: "'JetBrains Mono', monospace"
+    }
+  })), React.createElement("div", {
+    className: "mb-2.5"
+  }, React.createElement("span", {
+    className: "mb-1.5 block text-xs",
+    style: {
+      color: C.textMuted
+    }
+  }, "ผูกเข้ากระเป๋าไหน"), React.createElement("div", {
+    className: "flex flex-wrap gap-1.5"
+  }, wallets.map(w => React.createElement("button", {
+    key: w.id,
+    type: "button",
+    onClick: () => setRetagWalletId(w.id),
+    className: "rounded-full px-3 py-1.5 text-[11px] font-medium",
+    style: {
+      background: retagWalletId === w.id ? C.blue : C.bgSoft,
+      color: retagWalletId === w.id ? "#FFFFFF" : C.textFaint
+    }
+  }, "👛 ", w.name)))), React.createElement("label", {
+    className: "mb-3 flex items-center gap-2"
+  }, React.createElement("input", {
+    type: "checkbox",
+    checked: retagOverwrite,
+    onChange: e => setRetagOverwrite(e.target.checked)
+  }), React.createElement("span", {
+    className: "text-[11px]",
+    style: {
+      color: C.textMuted
+    }
+  }, "ทับรายการที่เคยผูกกระเป๋าอื่นไว้แล้วด้วย (ปกติจะข้ามรายการที่ผูกไว้แล้ว)")), React.createElement("button", {
+    onClick: retagExpensesToWallet,
+    disabled: !retagWalletId,
+    className: "w-full rounded-lg py-2.5 text-sm font-semibold",
+    style: {
+      background: C.green,
+      color: "#FFFFFF",
+      opacity: !retagWalletId ? 0.5 : 1
+    },
+    type: "button"
+  }, "ยืนยัน"))), showTransferModal && React.createElement("div", {
     className: "fixed inset-0 z-50 flex items-center justify-center p-5",
     style: {
       background: "rgba(0,0,0,0.55)"
