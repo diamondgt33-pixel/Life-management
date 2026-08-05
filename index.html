@@ -1941,32 +1941,32 @@ function GrabProfitMeter() {
   const activeEnergyUnitShort = isActiveVehicleEV ? "kWh" : "ลิตร";
   const activeEfficiencyUnit = isActiveVehicleEV ? "กม./kWh" : "กม./ลิตร";
   const walletPool = useMemo(() => {
-    const lifetimeProfit = entries.reduce((a, e) => a + (e.profit || 0), 0);
-    const lifetimeExtraIncome = extraIncome.reduce((a, e) => a + (e.amount || 0), 0);
-    const manualTransfers = walletTransfers.reduce((a, t) => a + (t.amount || 0), 0);
-    const centralDailyExpenses = dailyExpenses.filter(e => e.walletId === "central").reduce((a, e) => a + (e.amount || 0), 0);
-    const centralMaintenance = maintenanceRecords.filter(r => r.walletId === "central").reduce((a, r) => a + (r.cost || 0), 0);
+    const thisMonth = todayISO().slice(0, 7);
+    const monthProfit = entries.filter(e => e.date.slice(0, 7) === thisMonth).reduce((a, e) => a + (e.profit || 0), 0);
+    const monthExtraIncome = extraIncome.filter(e => e.date.slice(0, 7) === thisMonth).reduce((a, e) => a + (e.amount || 0), 0);
+    const manualTransfers = walletTransfers.filter(t => t.date.slice(0, 7) === thisMonth).reduce((a, t) => a + (t.amount || 0), 0);
+    const centralDailyExpenses = dailyExpenses.filter(e => e.walletId === "central" && e.date.slice(0, 7) === thisMonth).reduce((a, e) => a + (e.amount || 0), 0);
+    const centralMaintenance = maintenanceRecords.filter(r => r.walletId === "central" && r.date.slice(0, 7) === thisMonth).reduce((a, r) => a + (r.cost || 0), 0);
     let centralFixedExpenses = 0;
     let parkedFixedExpenses = 0;
-    Object.values(paidExpenses).forEach(ids => {
-      ids.forEach(id => {
-        const item = fixedExpenses.find(e => e.id === id);
-        if (!item) return;
-        if (item.walletId && item.walletId !== "central") {
-          parkedFixedExpenses += item.amount || 0;
-        } else {
-          centralFixedExpenses += item.amount || 0;
-        }
-      });
+    (paidExpenses[thisMonth] || []).forEach(id => {
+      const item = fixedExpenses.find(e => e.id === id);
+      if (!item) return;
+      if (item.walletId && item.walletId !== "central") {
+        parkedFixedExpenses += item.amount || 0;
+      } else {
+        centralFixedExpenses += item.amount || 0;
+      }
     });
-    const lifetimeTransferred = manualTransfers + parkedFixedExpenses;
-    const lifetimeSpentFromCentral = centralDailyExpenses + centralMaintenance + centralFixedExpenses;
-    const unallocated = Math.round((lifetimeProfit + lifetimeExtraIncome - lifetimeTransferred - lifetimeSpentFromCentral) * 100) / 100;
+    const monthTransferred = manualTransfers + parkedFixedExpenses;
+    const monthSpentFromCentral = centralDailyExpenses + centralMaintenance + centralFixedExpenses;
+    const unallocated = Math.round((monthProfit + monthExtraIncome - monthTransferred - monthSpentFromCentral) * 100) / 100;
     return {
-      lifetimeProfit,
-      lifetimeExtraIncome,
-      lifetimeTransferred,
-      lifetimeSpentFromCentral,
+      ym: thisMonth,
+      lifetimeProfit: monthProfit,
+      lifetimeExtraIncome: monthExtraIncome,
+      lifetimeTransferred: monthTransferred,
+      lifetimeSpentFromCentral: monthSpentFromCentral,
       unallocated
     };
   }, [entries, extraIncome, walletTransfers, dailyExpenses, maintenanceRecords, paidExpenses, fixedExpenses]);
@@ -2394,6 +2394,20 @@ function GrabProfitMeter() {
     const next = wallets.map(w => w.id === id ? {
       ...w,
       name
+    } : w);
+    setWallets(next);
+    try {
+      await window.storage.set("wallets", JSON.stringify(next), false);
+    } catch (e) {
+      reportSaveError(e);
+    }
+  };
+  const setWalletBalance = async (id, newBalance) => {
+    setSaveError("");
+    const latest = await readLatestArray("wallets", wallets);
+    const next = latest.map(w => w.id === id ? {
+      ...w,
+      balance: Math.round(Number(newBalance) * 100) / 100
     } : w);
     setWallets(next);
     try {
@@ -6453,7 +6467,7 @@ function GrabProfitMeter() {
     style: {
       color: C.greenDeep
     }
-  }, "ยังไม่ได้จัดสรร (โอนเข้ากระเป๋าได้อีก)"), React.createElement("span", {
+  }, "ยังไม่ได้จัดสรร เดือนนี้ (โอนเข้ากระเป๋าได้อีก)"), React.createElement("span", {
     className: "text-xs font-semibold",
     style: {
       color: C.greenDeep,
@@ -6480,7 +6494,12 @@ function GrabProfitMeter() {
     }
   }, thb(w.balance), " ฿")))), showWalletManager && React.createElement("div", {
     className: "flex flex-col gap-2"
-  }, wallets.map(w => React.createElement("div", {
+  }, React.createElement("p", {
+    className: "text-[10px] leading-relaxed",
+    style: {
+      color: C.textFaint
+    }
+  }, "แก้ยอดคงเหลือตรงนี้ได้เลยถ้าตัวเลขผิดพลาด (พิมพ์ทับได้ทันที)"), wallets.map(w => React.createElement("div", {
     key: w.id,
     className: "flex items-center gap-1.5"
   }, React.createElement("input", {
@@ -6493,13 +6512,19 @@ function GrabProfitMeter() {
       color: C.text,
       border: `1px solid ${C.hairline}`
     }
-  }), React.createElement("span", {
-    className: "w-24 shrink-0 text-right text-xs",
+  }), React.createElement("input", {
+    type: "number",
+    inputMode: "decimal",
+    value: w.balance,
+    onChange: e => setWalletBalance(w.id, e.target.value === "" ? 0 : e.target.value),
+    className: "w-24 shrink-0 rounded-lg px-2 py-2 text-right text-xs",
     style: {
-      color: C.textFaint,
+      background: C.bgSoft,
+      color: C.text,
+      border: `1px solid ${C.hairline}`,
       fontFamily: "'JetBrains Mono', monospace"
     }
-  }, thb(w.balance), " ฿"), React.createElement("button", {
+  }), React.createElement("button", {
     onClick: () => deleteWallet(w.id),
     className: "p-1.5",
     "aria-label": "ลบกระเป๋า",
@@ -7339,12 +7364,17 @@ function GrabProfitMeter() {
         background: C.bgSoft
       }
     }, React.createElement("div", {
+      className: "mb-1 text-[10px]",
+      style: {
+        color: C.textFaint
+      }
+    }, "เดือน ", monthLabelThaiLong(walletPool.ym)), React.createElement("div", {
       className: "flex items-center justify-between text-xs"
     }, React.createElement("span", {
       style: {
         color: C.textMuted
       }
-    }, "เงินที่หาได้ทั้งหมด (สะสม)"), React.createElement("span", {
+    }, "รายรับเดือนนี้"), React.createElement("span", {
       style: {
         color: C.text,
         fontFamily: "'JetBrains Mono', monospace"
@@ -7355,12 +7385,12 @@ function GrabProfitMeter() {
       style: {
         color: C.textMuted
       }
-    }, "โอนเข้ากระเป๋าไปแล้ว (สะสม)"), React.createElement("span", {
+    }, "จัดสรรไปแล้วเดือนนี้ (โอน+ตัดใช้)"), React.createElement("span", {
       style: {
         color: C.text,
         fontFamily: "'JetBrains Mono', monospace"
       }
-    }, thb(walletPool.lifetimeTransferred), " ฿")), React.createElement("div", {
+    }, thb(walletPool.lifetimeTransferred + walletPool.lifetimeSpentFromCentral), " ฿")), React.createElement("div", {
       className: "mt-1.5 flex items-center justify-between border-t pt-1.5 text-xs font-semibold",
       style: {
         borderColor: C.hairline
