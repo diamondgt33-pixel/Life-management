@@ -3174,6 +3174,8 @@ function GrabProfitMeter() {
     return [...new Set([...DAILY_EXPENSE_CATEGORIES, ...fromFixed])];
   }, [fixedExpenses]);
   const dailyExpenseSummary = useMemo(() => {
+    const livingItem = fixedExpenses.find(e => e.name === "ค่ากินอยู่");
+    const linkedWalletId = livingItem && livingItem.walletId && livingItem.walletId !== "central" ? livingItem.walletId : null;
     let filteredExp = [];
     let filteredIncomeEntries = [];
     if (dailyExpPeriod === "day") {
@@ -3188,6 +3190,7 @@ function GrabProfitMeter() {
       filteredExp = dailyExpenses.filter(e => e.date.slice(0, 7) === m);
       filteredIncomeEntries = entries.filter(e => e.date.slice(0, 7) === m);
     }
+    if (linkedWalletId) filteredExp = filteredExp.filter(e => e.walletId === linkedWalletId);
     const totalExpense = filteredExp.reduce((a, e) => a + (e.amount || 0), 0);
     const totalProfit = filteredIncomeEntries.reduce((a, e) => a + (e.profit || 0), 0);
     const byCategory = {};
@@ -3205,9 +3208,10 @@ function GrabProfitMeter() {
       sufficient: totalProfit >= totalExpense,
       pct: totalExpense > 0 ? Math.min(100, totalProfit / totalExpense * 100) : 100,
       categoryRows,
-      count: filteredExp.length
+      count: filteredExp.length,
+      linkedWalletId
     };
-  }, [dailyExpenses, entries, dailyExpPeriod, dailyExpViewDate]);
+  }, [dailyExpenses, entries, dailyExpPeriod, dailyExpViewDate, fixedExpenses]);
   const livingBudgetCheck = useMemo(() => {
     const livingItem = fixedExpenses.find(e => e.name === "ค่ากินอยู่");
     if (!livingItem || !livingItem.amount) return {
@@ -6726,7 +6730,12 @@ function GrabProfitMeter() {
     style: {
       color: C.text
     }
-  }, "รายรับ Grab เทียบรายจ่ายทั่วไป"), React.createElement("div", {
+  }, "รายรับ Grab เทียบรายจ่ายทั่วไป"), dailyExpenseSummary.linkedWalletId && React.createElement("p", {
+    className: "mb-2.5 text-[11px]",
+    style: {
+      color: C.textFaint
+    }
+  }, "นับเฉพาะรายจ่ายที่หักจากกระเป๋า \"ค่ากินอยู่\" เท่านั้น (ตรงกับที่ตั้งไว้ในรายจ่ายรายเดือน)"), React.createElement("div", {
     className: "mb-3 flex gap-1.5"
   }, [{
     key: "day",
