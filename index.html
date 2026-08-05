@@ -2528,7 +2528,7 @@ function GrabProfitMeter() {
   };
   const resetUnallocatedToZero = async () => {
     setSaveError("");
-    const newAdjustment = Math.round((walletPoolAdjustment + walletPool.rawUnallocated) * 100) / 100;
+    const newAdjustment = Math.round(walletPool.rawUnallocated * 100) / 100;
     setWalletPoolAdjustment(newAdjustment);
     try {
       await window.storage.set("wallet-pool-adjustment", JSON.stringify(newAdjustment), false);
