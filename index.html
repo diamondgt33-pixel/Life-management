@@ -3157,7 +3157,9 @@ function GrabProfitMeter() {
       hasItem: false
     };
     const thisMonth = todayISO().slice(0, 7);
-    const actualSpend = dailyExpenses.filter(e => e.date.slice(0, 7) === thisMonth).reduce((a, e) => a + (e.amount || 0), 0);
+    const linkedWalletId = livingItem.walletId && livingItem.walletId !== "central" ? livingItem.walletId : null;
+    const linkedWallet = linkedWalletId ? wallets.find(w => w.id === linkedWalletId) : null;
+    const actualSpend = dailyExpenses.filter(e => e.date.slice(0, 7) === thisMonth).filter(e => linkedWalletId ? e.walletId === linkedWalletId : true).reduce((a, e) => a + (e.amount || 0), 0);
     const budget = livingItem.amount;
     const pct = budget > 0 ? actualSpend / budget * 100 : 0;
     const dayOfMonth = Number(todayISO().slice(8, 10));
@@ -3167,6 +3169,9 @@ function GrabProfitMeter() {
     const projected = dayOfMonth > 0 ? actualSpend / dayOfMonth * daysInMonth : actualSpend;
     return {
       hasItem: true,
+      linkedWalletId,
+      linkedWalletName: linkedWallet?.name || "",
+      walletBalance: linkedWallet?.balance,
       budget,
       actualSpend,
       pct,
@@ -3175,7 +3180,7 @@ function GrabProfitMeter() {
       projected,
       projectedOverBudget: projected > budget
     };
-  }, [fixedExpenses, dailyExpenses]);
+  }, [fixedExpenses, dailyExpenses, wallets]);
   const expenseForecast = useMemo(() => {
     const sortedExp = [...dailyExpenses].sort((a, b) => b.date.localeCompare(a.date));
     const recentDates = [...new Set(sortedExp.map(e => e.date))].slice(0, 7);
@@ -6717,7 +6722,7 @@ function GrabProfitMeter() {
     style: {
       color: C.textFaint
     }
-  }, "เทียบยอดรายจ่ายทั่วไปเดือนนี้กับงบที่ตั้งไว้ในรายจ่ายรายเดือน (", thb(livingBudgetCheck.budget), " บาท/เดือน)"), React.createElement("div", {
+  }, livingBudgetCheck.linkedWalletId ? `เชื่อมกับกระเป๋า "${livingBudgetCheck.linkedWalletName}" — นับเฉพาะรายจ่ายที่หักจากกระเป๋านี้ ตรงกับยอดในกระเป๋าเป๊ะ (งบที่ตั้งไว้ ${thb(livingBudgetCheck.budget)} บาท/เดือน)` : `เทียบยอดรายจ่ายทั่วไปเดือนนี้กับงบที่ตั้งไว้ในรายจ่ายรายเดือน (${thb(livingBudgetCheck.budget)} บาท/เดือน) — ถ้าอยากให้นับเฉพาะกระเป๋า "ค่ากินอยู่" โดยเฉพาะ ไปตั้งค่าที่แท็บ "รายจ่ายรายเดือน" ได้`), React.createElement("div", {
     className: "mb-2 flex items-center justify-between text-xs"
   }, React.createElement("span", {
     style: {
