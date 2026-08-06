@@ -1971,6 +1971,7 @@ function GrabProfitMeter() {
   const activeEnergyUnitShort = isActiveVehicleEV ? "kWh" : "ลิตร";
   const activeEfficiencyUnit = isActiveVehicleEV ? "กม./kWh" : "กม./ลิตร";
   const walletPool = useMemo(() => {
+    const thisMonth = todayISO().slice(0, 7);
     const lifetimeProfit = entries.reduce((a, e) => a + (e.profit || 0), 0);
     const lifetimeExtraIncome = extraIncome.reduce((a, e) => a + (e.amount || 0), 0);
     const manualTransfers = walletTransfers.reduce((a, t) => a + (t.amount || 0), 0);
@@ -1978,7 +1979,8 @@ function GrabProfitMeter() {
     const centralMaintenance = maintenanceRecords.filter(r => r.walletId === "central").reduce((a, r) => a + (r.cost || 0), 0);
     let centralFixedExpenses = 0;
     let parkedFixedExpenses = 0;
-    Object.values(paidExpenses).forEach(ids => {
+    let thisMonthFixedSpent = 0;
+    Object.entries(paidExpenses).forEach(([month, ids]) => {
       ids.forEach(id => {
         const item = fixedExpenses.find(e => e.id === id);
         if (!item) return;
@@ -1987,20 +1989,35 @@ function GrabProfitMeter() {
         } else {
           centralFixedExpenses += item.amount || 0;
         }
+        if (month === thisMonth) thisMonthFixedSpent += item.amount || 0;
       });
     });
     const monthTransferred = manualTransfers + parkedFixedExpenses;
     const monthSpentFromCentral = centralDailyExpenses + centralMaintenance + centralFixedExpenses;
     const rawUnallocated = lifetimeProfit + lifetimeExtraIncome - monthTransferred - monthSpentFromCentral;
     const unallocated = Math.round((rawUnallocated - walletPoolAdjustment) * 100) / 100;
+    const thisMonthProfit = entries.filter(e => e.date.slice(0, 7) === thisMonth).reduce((a, e) => a + (e.profit || 0), 0);
+    const thisMonthExtraIncome = extraIncome.filter(e => e.date.slice(0, 7) === thisMonth).reduce((a, e) => a + (e.amount || 0), 0);
+    const thisMonthCentralDaily = dailyExpenses.filter(e => e.walletId === "central" && e.date.slice(0, 7) === thisMonth).reduce((a, e) => a + (e.amount || 0), 0);
+    const thisMonthCentralMaintenance = maintenanceRecords.filter(r => r.walletId === "central" && r.date.slice(0, 7) === thisMonth).reduce((a, r) => a + (r.cost || 0), 0);
+    const thisMonthTransfers = walletTransfers.filter(t => t.date.slice(0, 7) === thisMonth).reduce((a, t) => a + (t.amount || 0), 0);
+    const thisMonthSpent = Math.round((thisMonthFixedSpent + thisMonthCentralDaily + thisMonthCentralMaintenance + thisMonthTransfers) * 100) / 100;
+    const oldMoneyBeforeThisMonth = Math.round((rawUnallocated - walletPoolAdjustment - thisMonthProfit - thisMonthExtraIncome + thisMonthSpent) * 100) / 100;
+    const thisMonthIncomeUntouched = oldMoneyBeforeThisMonth >= thisMonthSpent;
+    const thisMonthIncomeSpent = thisMonthIncomeUntouched ? 0 : Math.round((thisMonthSpent - oldMoneyBeforeThisMonth) * 100) / 100;
     return {
-      ym: todayISO().slice(0, 7),
+      ym: thisMonth,
       lifetimeProfit,
       lifetimeExtraIncome,
       lifetimeTransferred: monthTransferred,
       lifetimeSpentFromCentral: monthSpentFromCentral,
       rawUnallocated,
-      unallocated
+      unallocated,
+      oldMoneyBeforeThisMonth,
+      thisMonthSpent,
+      thisMonthProfit,
+      thisMonthIncomeUntouched,
+      thisMonthIncomeSpent
     };
   }, [entries, extraIncome, walletTransfers, dailyExpenses, maintenanceRecords, paidExpenses, fixedExpenses, walletPoolAdjustment]);
   const addVehicle = () => {
@@ -2574,6 +2591,15 @@ function GrabProfitMeter() {
     setWalletPoolAdjustment(newAdjustment);
     try {
       await window.storage.set("wallet-pool-adjustment", JSON.stringify(newAdjustment), false);
+    } catch (e) {
+      reportSaveError(e);
+    }
+  };
+  const undoResetBaseline = async () => {
+    setSaveError("");
+    setWalletPoolAdjustment(0);
+    try {
+      await window.storage.set("wallet-pool-adjustment", JSON.stringify(0), false);
     } catch (e) {
       reportSaveError(e);
     }
@@ -6744,7 +6770,17 @@ function GrabProfitMeter() {
     style: {
       color: C.textFaint
     }
-  }, "สองบรรทัดนี้ไม่จำเป็นต้องเท่ากัน — บรรทัดบนคือเงินสะสมทั้งหมดตั้งแต่เริ่มใช้แอปที่ยังไม่ได้จัดสรร บรรทัดล่างคือกำไรของเดือนนี้เดือนเดียว"), !showWalletManager && wallets.length > 0 && React.createElement("div", {
+  }, "สองบรรทัดนี้ไม่จำเป็นต้องเท่ากัน — บรรทัดบนคือเงินสะสมทั้งหมดตั้งแต่เริ่มใช้แอปที่ยังไม่ได้จัดสรร บรรทัดล่างคือกำไรของเดือนนี้เดือนเดียว"), React.createElement("div", {
+    className: "mb-2.5 rounded-lg p-3",
+    style: {
+      background: walletPool.thisMonthIncomeUntouched ? C.greenDim : C.amberDim
+    }
+  }, React.createElement("p", {
+    className: "text-[11px] font-semibold leading-relaxed",
+    style: {
+      color: walletPool.thisMonthIncomeUntouched ? C.greenDeep : "#92400E"
+    }
+  }, walletPool.thisMonthIncomeUntouched ? `✅ บิลเดือนนี้ (${thb(walletPool.thisMonthSpent)} บาท) จ่ายจากเงินเก่าที่สะสมไว้ก่อนเดือนนี้ทั้งหมด — กำไรเดือนนี้ (${thb(walletPool.thisMonthProfit)} บาท) ยังไม่ถูกแตะเลย เก็บไว้ใช้เดือนหน้าได้เต็มๆ` : `⚠️ เงินเก่าก่อนเดือนนี้มีไม่พอจ่ายบิลเดือนนี้ (${thb(walletPool.thisMonthSpent)} บาท) เลยเริ่มดึงกำไรเดือนนี้มาโปะแล้ว ${thb(walletPool.thisMonthIncomeSpent)} บาท (จากที่หาได้ ${thb(walletPool.thisMonthProfit)} บาท) เหลือกำไรเดือนนี้ที่ยังไม่ถูกแตะ ${thb(Math.max(0, walletPool.thisMonthProfit - walletPool.thisMonthIncomeSpent))} บาท`)), !showWalletManager && wallets.length > 0 && React.createElement("div", {
     className: "flex flex-col gap-1.5"
   }, wallets.map(w => React.createElement("div", {
     key: w.id,
@@ -6922,7 +6958,25 @@ function GrabProfitMeter() {
       color: "#FFFFFF"
     },
     type: "button"
-  }, "ยืนยันเริ่มนับใหม่"))))), React.createElement("div", {
+  }, "ยืนยันเริ่มนับใหม่")))), walletPoolAdjustment !== 0 && React.createElement("div", {
+    className: "mt-2 rounded-lg p-3",
+    style: {
+      background: C.bgSoft
+    }
+  }, React.createElement("p", {
+    className: "mb-2 text-[11px] leading-relaxed",
+    style: {
+      color: C.textFaint
+    }
+  }, "ตอนนี้มีจุดรีเซ็ตค้างอยู่ (", thb(walletPoolAdjustment), " บาทที่เคยถูกเขียนออกไป) — ถ้าเงินก้อนนั้นจริงๆ แล้วยังเป็นของคุณอยู่ (ไม่ได้ใช้ไปจริง) กดล้างจุดรีเซ็ตนี้เพื่อนับกลับให้ครบตั้งแต่ต้นได้"), React.createElement("button", {
+    onClick: undoResetBaseline,
+    className: "w-full rounded-lg py-2 text-xs font-semibold",
+    style: {
+      background: C.blue,
+      color: "#FFFFFF"
+    },
+    type: "button"
+  }, "↩️ ล้างจุดรีเซ็ต (นับย้อนกลับให้ครบ)"))), React.createElement("div", {
     className: "rounded-xl p-3.5",
     style: {
       background: dailyExpenseSummary.sufficient ? "var(--c-hero-green)" : "var(--c-hero-red)",
