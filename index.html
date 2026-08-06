@@ -728,6 +728,18 @@ const shiftMondayDays = (mondayIso, days) => {
   d.setDate(d.getDate() + days);
   return toLocalISO(d);
 };
+const isFixedItemActiveInMonth = (item, ym) => {
+  if (!item.installmentEndMonth) return true;
+  const start = item.installmentStartMonth || ym;
+  return ym >= start && ym <= item.installmentEndMonth;
+};
+const addMonthsToYm = (ym, months) => {
+  const [y, m] = ym.split("-").map(Number);
+  const total = y * 12 + (m - 1) + months;
+  const ny = Math.floor(total / 12);
+  const nm = total % 12 + 1;
+  return `${ny}-${String(nm).padStart(2, "0")}`;
+};
 const getWeekAdjustedProfit = (mondayKey, allEntries) => {
   let total = 0;
   allEntries.forEach(e => {
@@ -1533,6 +1545,13 @@ function GrabProfitMeter() {
   const [extraIncome, setExtraIncome] = useState([]);
   const [wallets, setWallets] = useState([]);
   const [showWalletManager, setShowWalletManager] = useState(false);
+  const [showInstallmentForm, setShowInstallmentForm] = useState(false);
+  const [instName, setInstName] = useState("");
+  const [instTotalAmount, setInstTotalAmount] = useState(0);
+  const [instMonths, setInstMonths] = useState(0);
+  const [instMonthlyOverride, setInstMonthlyOverride] = useState(0);
+  const [instStartMonth, setInstStartMonth] = useState(todayISO().slice(0, 7));
+  const [instWalletId, setInstWalletId] = useState("");
   const [newWalletName, setNewWalletName] = useState("");
   const [dailyExpWalletId, setDailyExpWalletId] = useState("");
   const [showTransferModal, setShowTransferModal] = useState(false);
@@ -1833,7 +1852,7 @@ function GrabProfitMeter() {
       monthDailyExpenses.forEach(e => {
         byCategory[e.category] = (byCategory[e.category] || 0) + (e.amount || 0);
       });
-      const fixedTotal = fixedExpenses.reduce((a, e) => a + (e.amount || 0), 0);
+      const fixedTotal = fixedExpenses.filter(e => isFixedItemActiveInMonth(e, targetYm)).reduce((a, e) => a + (e.amount || 0), 0);
       const totalIncome = grabProfit + extraIncomeTotal;
       const totalExpense = dailyExpenseTotal + fixedTotal;
       return {
@@ -2123,6 +2142,29 @@ function GrabProfitMeter() {
       name: "",
       amount: 0
     }]);
+  };
+  const addInstallment = () => {
+    if (!instName.trim() || !instTotalAmount || instTotalAmount <= 0 || !instMonths || instMonths <= 0) return;
+    const monthlyAmount = instMonthlyOverride > 0 ? instMonthlyOverride : Math.round(instTotalAmount / instMonths * 100) / 100;
+    const endMonth = addMonthsToYm(instStartMonth, instMonths - 1);
+    const item = {
+      id: `inst-${Date.now()}`,
+      name: instName.trim(),
+      amount: monthlyAmount,
+      walletId: instWalletId || undefined,
+      installmentTotalAmount: instTotalAmount,
+      installmentTotalMonths: instMonths,
+      installmentStartMonth: instStartMonth,
+      installmentEndMonth: endMonth
+    };
+    setFixedExpenses(prev => [...prev, item]);
+    setInstName("");
+    setInstTotalAmount(0);
+    setInstMonths(0);
+    setInstMonthlyOverride(0);
+    setInstStartMonth(todayISO().slice(0, 7));
+    setInstWalletId("");
+    setShowInstallmentForm(false);
   };
   const togglePaidExpense = async (month, expenseId) => {
     setSaveError("");
@@ -3145,11 +3187,12 @@ function GrabProfitMeter() {
     const grabProfitThisMonth = entries.filter(e => e.date.slice(0, 7) === thisMonth).reduce((a, e) => a + (e.profit || 0), 0);
     const extraIncomeThisMonth = extraIncome.filter(e => e.date.slice(0, 7) === thisMonth).reduce((a, e) => a + (e.amount || 0), 0);
     const profitThisMonth = grabProfitThisMonth + extraIncomeThisMonth;
-    const totalFixed = fixedExpenses.reduce((a, e) => a + (e.amount || 0), 0);
+    const activeFixedExpenses = fixedExpenses.filter(e => isFixedItemActiveInMonth(e, thisMonth));
+    const totalFixed = activeFixedExpenses.reduce((a, e) => a + (e.amount || 0), 0);
     const pct = totalFixed > 0 ? profitThisMonth / totalFixed * 100 : 0;
     const remaining = Math.max(0, totalFixed - profitThisMonth);
     let remainingProfit = profitThisMonth;
-    const waterfall = fixedExpenses.map(item => {
+    const waterfall = activeFixedExpenses.map(item => {
       const covered = Math.max(0, Math.min(item.amount || 0, remainingProfit));
       const isCovered = (item.amount || 0) > 0 && covered >= item.amount;
       remainingProfit -= covered;
@@ -6395,16 +6438,26 @@ function GrabProfitMeter() {
     className: "flex flex-col gap-2"
   }, fixedExpenses.map(item => {
     const isPaid = (paidExpenses[fixedExpViewMonth] || []).includes(item.id);
+    const isInstallment = !!item.installmentEndMonth;
+    const activeNow = isFixedItemActiveInMonth(item, fixedExpViewMonth);
+    const monthsElapsed = isInstallment ? Math.max(1, Math.min(item.installmentTotalMonths, (Number(fixedExpViewMonth.slice(0, 4)) - Number(item.installmentStartMonth.slice(0, 4))) * 12 + (Number(fixedExpViewMonth.slice(5, 7)) - Number(item.installmentStartMonth.slice(5, 7))) + 1)) : 0;
     return React.createElement("div", {
       key: item.id,
       className: "flex flex-col gap-1.5 rounded-lg p-2",
       style: {
-        background: wallets.length > 0 ? C.bgSoft : "transparent"
+        background: wallets.length > 0 || isInstallment ? C.bgSoft : "transparent",
+        opacity: activeNow ? 1 : 0.5
       }
-    }, React.createElement("div", {
+    }, isInstallment && React.createElement("div", {
+      className: "pl-7 text-[10px] font-medium",
+      style: {
+        color: activeNow ? C.blue : C.textFaint
+      }
+    }, "💳", " ", activeNow ? `ผ่อนเดือนที่ ${monthsElapsed}/${item.installmentTotalMonths} (รวม ${thb(item.installmentTotalAmount)} ฿)` : fixedExpViewMonth < item.installmentStartMonth ? `ยังไม่เริ่มผ่อน (เริ่ม ${monthLabelThai(item.installmentStartMonth)})` : `ผ่อนครบแล้ว (จบ ${monthLabelThai(item.installmentEndMonth)})`), React.createElement("div", {
       className: "flex items-center gap-1.5"
     }, React.createElement("button", {
       onClick: () => togglePaidExpense(fixedExpViewMonth, item.id),
+      disabled: !activeNow,
       className: "flex h-6 w-6 shrink-0 items-center justify-center rounded-md",
       style: {
         background: isPaid ? C.green : C.bgSoft,
@@ -6494,7 +6547,128 @@ function GrabProfitMeter() {
       border: `1px dashed ${C.hairlineStrong}`
     },
     type: "button"
-  }, "+ เพิ่มรายการรายจ่าย"))), activeTab === "daily" && React.createElement(React.Fragment, null, React.createElement("div", {
+  }, "+ เพิ่มรายการรายจ่าย"), !showInstallmentForm ? React.createElement("button", {
+    onClick: () => setShowInstallmentForm(true),
+    className: "mt-2 w-full rounded-lg py-2 text-xs font-medium",
+    style: {
+      background: C.bgSoft,
+      color: C.blue,
+      border: `1px dashed ${C.blue}`
+    },
+    type: "button"
+  }, "💳 เพิ่มรายการผ่อนบัตรเครดิต") : React.createElement("div", {
+    className: "mt-2 flex flex-col gap-2 rounded-lg p-3",
+    style: {
+      background: C.bgSoft,
+      border: `1px solid ${C.hairline}`
+    }
+  }, React.createElement("p", {
+    className: "text-[11px] font-semibold",
+    style: {
+      color: C.text
+    }
+  }, "💳 เพิ่มรายการผ่อนบัตรเครดิต"), React.createElement("input", {
+    type: "text",
+    value: instName,
+    onChange: e => setInstName(e.target.value),
+    placeholder: "ชื่อสินค้า เช่น iPhone 15",
+    className: "rounded-lg px-2.5 py-2 text-xs",
+    style: {
+      background: C.panel,
+      color: C.text,
+      border: `1px solid ${C.hairline}`
+    }
+  }), React.createElement("div", {
+    className: "flex gap-2"
+  }, React.createElement(Field, {
+    label: "ยอดรวมทั้งหมด",
+    suffix: "บาท",
+    value: instTotalAmount,
+    onChange: setInstTotalAmount,
+    placeholder: "0"
+  }), React.createElement(Field, {
+    label: "ผ่อนกี่เดือน",
+    suffix: "เดือน",
+    value: instMonths,
+    onChange: setInstMonths,
+    placeholder: "0",
+    step: "1"
+  })), instTotalAmount > 0 && instMonths > 0 && React.createElement("p", {
+    className: "text-[11px]",
+    style: {
+      color: C.textFaint
+    }
+  }, "คำนวณอัตโนมัติ: เดือนละ ", thb(Math.round(instTotalAmount / instMonths * 100) / 100), " บาท (ปรับเองได้ถ้าธนาคารคิดไม่เท่ากันทุกเดือน)"), React.createElement(Field, {
+    label: "ยอดผ่อนต่อเดือน (ถ้าไม่เท่ากับที่คำนวณอัตโนมัติ)",
+    suffix: "บาท",
+    value: instMonthlyOverride,
+    onChange: setInstMonthlyOverride,
+    placeholder: "เว้นว่างถ้าใช้ค่าอัตโนมัติ"
+  }), React.createElement("label", {
+    className: "flex flex-col gap-1.5"
+  }, React.createElement("span", {
+    className: "text-xs",
+    style: {
+      color: C.textMuted
+    }
+  }, "เริ่มผ่อนเดือนไหน"), React.createElement("input", {
+    type: "month",
+    value: instStartMonth,
+    onChange: e => setInstStartMonth(e.target.value),
+    className: "rounded-lg px-3 py-2 text-sm",
+    style: {
+      background: C.panel,
+      color: C.text,
+      border: `1px solid ${C.hairline}`,
+      fontFamily: "'JetBrains Mono', monospace"
+    }
+  })), wallets.length > 0 && React.createElement("div", null, React.createElement("span", {
+    className: "mb-1.5 block text-xs",
+    style: {
+      color: C.textMuted
+    }
+  }, "พอติ๊กจ่ายแล้วแต่ละเดือน"), React.createElement("div", {
+    className: "flex flex-wrap gap-1.5"
+  }, React.createElement("button", {
+    type: "button",
+    onClick: () => setInstWalletId(""),
+    className: "rounded-full px-2.5 py-1 text-[10px] font-medium",
+    style: {
+      background: !instWalletId ? C.greenDeep : C.panel,
+      color: !instWalletId ? "#FFFFFF" : C.textFaint,
+      border: `1px solid ${C.hairline}`
+    }
+  }, "ตัดใช้เลย"), wallets.map(w => React.createElement("button", {
+    key: w.id,
+    type: "button",
+    onClick: () => setInstWalletId(w.id),
+    className: "rounded-full px-2.5 py-1 text-[10px] font-medium",
+    style: {
+      background: instWalletId === w.id ? C.blue : C.panel,
+      color: instWalletId === w.id ? "#FFFFFF" : C.textFaint,
+      border: `1px solid ${C.hairline}`
+    }
+  }, "👛 พักไว้ที่ ", w.name)))), React.createElement("div", {
+    className: "mt-1 flex gap-2"
+  }, React.createElement("button", {
+    onClick: () => setShowInstallmentForm(false),
+    className: "flex-1 rounded-lg py-2 text-xs font-medium",
+    style: {
+      background: C.panel,
+      color: C.textMuted
+    },
+    type: "button"
+  }, "ยกเลิก"), React.createElement("button", {
+    onClick: addInstallment,
+    disabled: !instName.trim() || !instTotalAmount || !instMonths,
+    className: "flex-1 rounded-lg py-2 text-xs font-semibold",
+    style: {
+      background: C.blue,
+      color: "#FFFFFF",
+      opacity: !instName.trim() || !instTotalAmount || !instMonths ? 0.5 : 1
+    },
+    type: "button"
+  }, "บันทึกรายการผ่อน"))))), activeTab === "daily" && React.createElement(React.Fragment, null, React.createElement("div", {
     className: "mb-4 rounded-xl p-3.5",
     style: {
       background: C.panel,
