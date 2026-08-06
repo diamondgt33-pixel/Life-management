@@ -3292,16 +3292,19 @@ function GrabProfitMeter() {
     };
   }, [fixedExpenses, dailyExpenses, wallets]);
   const expenseForecast = useMemo(() => {
-    const sortedExp = [...dailyExpenses].sort((a, b) => b.date.localeCompare(a.date));
+    const livingItem = fixedExpenses.find(e => e.name === "ค่ากินอยู่");
+    const linkedWalletId = livingItem && livingItem.walletId && livingItem.walletId !== "central" ? livingItem.walletId : null;
+    const relevantExpenses = linkedWalletId ? dailyExpenses.filter(e => e.walletId === linkedWalletId) : dailyExpenses;
+    const sortedExp = [...relevantExpenses].sort((a, b) => b.date.localeCompare(a.date));
     const recentDates = [...new Set(sortedExp.map(e => e.date))].slice(0, 7);
-    const avgDailyExpense = recentDates.length > 0 ? recentDates.reduce((sum, d) => sum + dailyExpenses.filter(e => e.date === d).reduce((a, e) => a + (e.amount || 0), 0), 0) / recentDates.length : 0;
+    const avgDailyExpense = recentDates.length > 0 ? recentDates.reduce((sum, d) => sum + relevantExpenses.filter(e => e.date === d).reduce((a, e) => a + (e.amount || 0), 0), 0) / recentDates.length : 0;
     const thisWeekMonday = mondayOf(todayISO());
-    const weekSoFar = dailyExpenses.filter(e => mondayOf(e.date) === thisWeekMonday).reduce((a, e) => a + (e.amount || 0), 0);
-    const daysLoggedThisWeek = new Set(dailyExpenses.filter(e => mondayOf(e.date) === thisWeekMonday).map(e => e.date)).size;
+    const weekSoFar = relevantExpenses.filter(e => mondayOf(e.date) === thisWeekMonday).reduce((a, e) => a + (e.amount || 0), 0);
+    const daysLoggedThisWeek = new Set(relevantExpenses.filter(e => mondayOf(e.date) === thisWeekMonday).map(e => e.date)).size;
     const daysRemainingThisWeek = Math.max(0, 7 - daysLoggedThisWeek);
     const thisMonth = todayISO().slice(0, 7);
-    const monthSoFar = dailyExpenses.filter(e => e.date.slice(0, 7) === thisMonth).reduce((a, e) => a + (e.amount || 0), 0);
-    const daysLoggedThisMonth = new Set(dailyExpenses.filter(e => e.date.slice(0, 7) === thisMonth).map(e => e.date)).size;
+    const monthSoFar = relevantExpenses.filter(e => e.date.slice(0, 7) === thisMonth).reduce((a, e) => a + (e.amount || 0), 0);
+    const daysLoggedThisMonth = new Set(relevantExpenses.filter(e => e.date.slice(0, 7) === thisMonth).map(e => e.date)).size;
     const y = Number(thisMonth.slice(0, 4));
     const m = Number(thisMonth.slice(5, 7));
     const totalDaysInMonth = new Date(y, m, 0).getDate();
@@ -3312,9 +3315,10 @@ function GrabProfitMeter() {
       weekSoFar,
       weekProjected: weekSoFar + avgDailyExpense * daysRemainingThisWeek,
       monthSoFar,
-      monthProjected: monthSoFar + avgDailyExpense * daysRemainingThisMonth
+      monthProjected: monthSoFar + avgDailyExpense * daysRemainingThisMonth,
+      linkedWalletId
     };
-  }, [dailyExpenses]);
+  }, [dailyExpenses, fixedExpenses]);
   const expenseChartData = useMemo(() => {
     const sorted = [...dailyExpenses].sort((a, b) => a.date.localeCompare(b.date));
     if (sorted.length === 0) return [];
@@ -7135,7 +7139,7 @@ function GrabProfitMeter() {
     style: {
       color: C.textFaint
     }
-  }, "คาดการณ์จากค่าเฉลี่ย ", expenseForecast.sampleSize, " วันล่าสุดที่มีการบันทึกรายจ่าย"), React.createElement("div", {
+  }, "คาดการณ์จากค่าเฉลี่ย ", expenseForecast.sampleSize, " วันล่าสุดที่มีการบันทึกรายจ่าย", expenseForecast.linkedWalletId && " (นับเฉพาะรายจ่ายที่หักจากกระเป๋า \"ค่ากินอยู่\")"), React.createElement("div", {
     className: "mb-3 rounded-lg py-2.5 text-center",
     style: {
       background: C.bgSoft
