@@ -3251,21 +3251,21 @@ function GrabProfitMeter() {
   const dailyExpenseSummary = useMemo(() => {
     const livingItem = fixedExpenses.find(e => e.name === "ค่ากินอยู่");
     const linkedWalletId = livingItem && livingItem.walletId && livingItem.walletId !== "central" ? livingItem.walletId : null;
-    let filteredExp = [];
+    let periodExp = [];
     let filteredIncomeEntries = [];
     if (dailyExpPeriod === "day") {
-      filteredExp = dailyExpenses.filter(e => e.date === dailyExpViewDate);
+      periodExp = dailyExpenses.filter(e => e.date === dailyExpViewDate);
       filteredIncomeEntries = entries.filter(e => e.date === dailyExpViewDate);
     } else if (dailyExpPeriod === "week") {
       const wk = mondayOf(dailyExpViewDate);
-      filteredExp = dailyExpenses.filter(e => mondayOf(e.date) === wk);
+      periodExp = dailyExpenses.filter(e => mondayOf(e.date) === wk);
       filteredIncomeEntries = entries.filter(e => mondayOf(e.date) === wk);
     } else if (dailyExpPeriod === "month") {
       const m = dailyExpViewDate.slice(0, 7);
-      filteredExp = dailyExpenses.filter(e => e.date.slice(0, 7) === m);
+      periodExp = dailyExpenses.filter(e => e.date.slice(0, 7) === m);
       filteredIncomeEntries = entries.filter(e => e.date.slice(0, 7) === m);
     }
-    if (linkedWalletId) filteredExp = filteredExp.filter(e => e.walletId === linkedWalletId);
+    const filteredExp = linkedWalletId ? periodExp.filter(e => e.walletId === linkedWalletId) : periodExp;
     const totalExpense = filteredExp.reduce((a, e) => a + (e.amount || 0), 0);
     const totalProfit = filteredIncomeEntries.reduce((a, e) => a + (e.profit || 0), 0);
     const byCategory = {};
@@ -3276,6 +3276,17 @@ function GrabProfitMeter() {
       cat,
       amt
     })).sort((a, b) => b.amt - a.amt);
+    const byWallet = {};
+    periodExp.forEach(e => {
+      const key = e.walletId || "__none__";
+      byWallet[key] = (byWallet[key] || 0) + (e.amount || 0);
+    });
+    const walletRows = Object.entries(byWallet).map(([walletId, amt]) => ({
+      walletId,
+      label: walletId === "__none__" ? "ไม่ระบุกระเป๋า" : walletId === "central" ? "กระเป๋ากลาง" : wallets.find(w => w.id === walletId)?.name || "กระเป๋าที่ลบไปแล้ว",
+      amt
+    })).sort((a, b) => b.amt - a.amt);
+    const periodTotalAllWallets = periodExp.reduce((a, e) => a + (e.amount || 0), 0);
     return {
       totalExpense,
       totalProfit,
@@ -3283,10 +3294,12 @@ function GrabProfitMeter() {
       sufficient: totalProfit >= totalExpense,
       pct: totalExpense > 0 ? Math.min(100, totalProfit / totalExpense * 100) : 100,
       categoryRows,
+      walletRows,
+      periodTotalAllWallets,
       count: filteredExp.length,
       linkedWalletId
     };
-  }, [dailyExpenses, entries, dailyExpPeriod, dailyExpViewDate, fixedExpenses]);
+  }, [dailyExpenses, entries, dailyExpPeriod, dailyExpViewDate, fixedExpenses, wallets]);
   const livingBudgetCheck = useMemo(() => {
     const livingItem = fixedExpenses.find(e => e.name === "ค่ากินอยู่");
     if (!livingItem || !livingItem.amount) return {
@@ -7311,6 +7324,91 @@ function GrabProfitMeter() {
         color: C.textMuted
       }
     }, r.cat), React.createElement("span", {
+      style: {
+        color: C.textFaint
+      }
+    }, Math.round(pct), "%"), React.createElement("span", {
+      className: "w-16 shrink-0 text-right font-medium",
+      style: {
+        color: C.text,
+        fontFamily: "'JetBrains Mono', monospace"
+      }
+    }, thb(r.amt), " ฿"));
+  }))), dailyExpenseSummary.walletRows.length > 0 && React.createElement("div", {
+    className: "mt-4 rounded-xl p-3.5",
+    style: {
+      background: C.panel,
+      border: `1px solid ${C.hairline}`
+    }
+  }, React.createElement("div", {
+    className: "mb-1 text-xs font-semibold",
+    style: {
+      color: C.text
+    }
+  }, "แยกตามกระเป๋า"), React.createElement("p", {
+    className: "mb-3 text-[11px]",
+    style: {
+      color: C.textFaint
+    }
+  }, "ใช้จ่ายทั้งหมดของช่วงที่เลือก แยกตามว่าตัดจากกระเป๋าไหนบ้าง (ไม่ถูกกรองเหมือนการ์ดอื่น เห็นทุกกระเป๋าพร้อมกัน)"), React.createElement("div", {
+    className: "mb-3 flex justify-center"
+  }, React.createElement("div", {
+    style: {
+      position: "relative",
+      width: 160,
+      height: 160
+    }
+  }, React.createElement(DonutChart, {
+    size: 160,
+    thickness: 22,
+    segments: dailyExpenseSummary.walletRows.map((r, i) => ({
+      label: r.label,
+      value: r.amt,
+      color: CATEGORY_CHART_COLORS[i % CATEGORY_CHART_COLORS.length]
+    }))
+  }), React.createElement("div", {
+    style: {
+      position: "absolute",
+      inset: 0,
+      display: "flex",
+      flexDirection: "column",
+      alignItems: "center",
+      justifyContent: "center"
+    }
+  }, React.createElement("span", {
+    style: {
+      fontSize: "10px",
+      color: C.textFaint
+    }
+  }, "รวมทุกกระเป๋า"), React.createElement("span", {
+    style: {
+      fontSize: "15px",
+      fontWeight: 700,
+      color: C.text,
+      fontFamily: "'JetBrains Mono', monospace"
+    }
+  }, thb(dailyExpenseSummary.periodTotalAllWallets), " ฿")))), React.createElement("div", {
+    className: "flex flex-col gap-1.5"
+  }, dailyExpenseSummary.walletRows.map((r, i) => {
+    const pct = dailyExpenseSummary.periodTotalAllWallets > 0 ? r.amt / dailyExpenseSummary.periodTotalAllWallets * 100 : 0;
+    return React.createElement("div", {
+      key: r.walletId,
+      className: "flex items-center gap-2 text-[12px]"
+    }, React.createElement("span", {
+      style: {
+        width: 8,
+        height: 8,
+        borderRadius: 9999,
+        background: CATEGORY_CHART_COLORS[i % CATEGORY_CHART_COLORS.length],
+        display: "inline-block",
+        flexShrink: 0
+      }
+    }), React.createElement("span", {
+      className: "flex-1 truncate",
+      style: {
+        color: C.textMuted
+      }
+    }, r.walletId === "__none__" ? "" : r.walletId === "central" ? "🏦 " : "👛 ", r.label), React.createElement("span", {
       style: {
         color: C.textFaint
       }
