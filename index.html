@@ -3482,6 +3482,39 @@ function GrabProfitMeter() {
       achieved: monthlyGoal > 0 && monthProfit >= monthlyGoal
     };
   }, [entries, monthlyGoal, workDays, extraIncome]);
+  const weeklyGoalProgress = useMemo(() => {
+    const thisMonth = todayISO().slice(0, 7);
+    const y = Number(thisMonth.slice(0, 4));
+    const m = Number(thisMonth.slice(5, 7));
+    const daysInMonth = new Date(y, m, 0).getDate();
+    const weeksSet = new Set();
+    for (let d = 1; d <= daysInMonth; d++) {
+      const iso = `${thisMonth}-${String(d).padStart(2, "0")}`;
+      weeksSet.add(mondayOf(iso));
+    }
+    const weeksInMonth = weeksSet.size || 1;
+    const weeklyGoal = monthlyGoal > 0 ? Math.round(monthlyGoal / weeksInMonth * 100) / 100 : 0;
+    const thisMonday = mondayOf(todayISO());
+    const weekEntries = entries.filter(e => mondayOf(e.date) === thisMonday);
+    const weekSoFarProfit = getWeekAdjustedProfit(thisMonday, entries);
+    const weekExtraIncome = extraIncome.filter(e => mondayOf(e.date) === thisMonday).reduce((a, e) => a + (e.amount || 0), 0);
+    const weekProfit = weekSoFarProfit + weekExtraIncome;
+    const daysLoggedThisWeek = weekEntries.length;
+    const daysRemainingThisWeek = Math.max(0, 7 - daysLoggedThisWeek);
+    const remaining = Math.max(0, weeklyGoal - weekProfit);
+    const requiredPerDay = daysRemainingThisWeek > 0 ? remaining / daysRemainingThisWeek : remaining;
+    const pct = weeklyGoal > 0 ? Math.min(100, weekProfit / weeklyGoal * 100) : 0;
+    return {
+      weeksInMonth,
+      weeklyGoal,
+      weekProfit,
+      daysRemaining: daysRemainingThisWeek,
+      remaining,
+      requiredPerDay,
+      pct,
+      achieved: weeklyGoal > 0 && weekProfit >= weeklyGoal
+    };
+  }, [entries, extraIncome, monthlyGoal]);
   const chartData = useMemo(() => {
     const sorted = [...entries].sort((a, b) => a.date.localeCompare(b.date));
     if (sorted.length === 0) return [];
@@ -4874,7 +4907,87 @@ function GrabProfitMeter() {
     style: {
       color: C.textFaint
     }
-  }, "เหลืออีก ", monthlyGoalProgress.daysRemaining, " วันที่วางแผนจะวิ่งในเดือนนี้"))), forecast.sampleSize > 0 && React.createElement("div", {
+  }, "เหลืออีก ", monthlyGoalProgress.daysRemaining, " วันที่วางแผนจะวิ่งในเดือนนี้"))), monthlyGoal > 0 && React.createElement("div", {
+    className: "mt-4 rounded-xl p-3.5",
+    style: {
+      background: C.panel,
+      border: `1px solid ${C.hairline}`,
+      borderLeft: `3px solid ${C.blue}`
+    }
+  }, React.createElement("div", {
+    className: "mb-1 flex items-center gap-2 text-xs font-semibold",
+    style: {
+      color: C.text
+    }
+  }, React.createElement("span", {
+    className: "flex h-6 w-6 items-center justify-center rounded-full",
+    style: {
+      background: "rgba(47,128,237,0.12)"
+    }
+  }, React.createElement(Icon, {
+    name: "calendar",
+    size: 13,
+    color: C.blue
+  })), "เป้าหมายรายสัปดาห์"), React.createElement("p", {
+    className: "mb-3 text-[11px] leading-relaxed",
+    style: {
+      color: C.textFaint
+    }
+  }, "หารจากเป้าหมายรายเดือน (", thb(monthlyGoal), " บาท ÷ ", weeklyGoalProgress.weeksInMonth, " สัปดาห์ที่คาบเกี่ยวเดือนนี้) = เป้าสัปดาห์ละ", " ", thb(weeklyGoalProgress.weeklyGoal), " บาท"), React.createElement("div", {
+    className: "mb-1.5 h-3 w-full overflow-hidden rounded-full",
+    style: {
+      background: C.bgSoft
+    }
+  }, React.createElement("div", {
+    className: "h-full rounded-full",
+    style: {
+      width: `${weeklyGoalProgress.pct}%`,
+      background: weeklyGoalProgress.achieved ? C.green : C.blue,
+      transition: "width 0.4s ease"
+    }
+  })), React.createElement("div", {
+    className: "mb-3 text-center text-xs font-medium",
+    style: {
+      color: weeklyGoalProgress.achieved ? C.greenDeep : C.textMuted
+    }
+  }, weeklyGoalProgress.achieved ? `ถึงเป้าสัปดาห์นี้แล้ว! 🎉 เกินมา ${thb(weeklyGoalProgress.weekProfit - weeklyGoalProgress.weeklyGoal)} บาท` : `ทำได้แล้ว ${thb(weeklyGoalProgress.weekProfit)} จาก ${thb(weeklyGoalProgress.weeklyGoal)} บาท (${Math.round(weeklyGoalProgress.pct)}%)`), !weeklyGoalProgress.achieved && React.createElement("div", {
+    className: "grid grid-cols-2 gap-2 text-center text-[11px]"
+  }, React.createElement("div", {
+    className: "rounded-lg py-2",
+    style: {
+      background: C.bgSoft
+    }
+  }, React.createElement("div", {
+    style: {
+      color: C.textFaint
+    }
+  }, "เหลืออีก"), React.createElement("div", {
+    className: "font-semibold",
+    style: {
+      color: C.text,
+      fontFamily: "'JetBrains Mono', monospace"
+    }
+  }, thb(weeklyGoalProgress.remaining), " ฿")), React.createElement("div", {
+    className: "rounded-lg py-2",
+    style: {
+      background: C.bgSoft
+    }
+  }, React.createElement("div", {
+    style: {
+      color: C.textFaint
+    }
+  }, "ต้องทำเฉลี่ยวันละ"), React.createElement("div", {
+    className: "font-semibold",
+    style: {
+      color: C.text,
+      fontFamily: "'JetBrains Mono', monospace"
+    }
+  }, thb(weeklyGoalProgress.requiredPerDay), " ฿"))), React.createElement("p", {
+    className: "mt-2 text-center text-[11px]",
+    style: {
+      color: C.textFaint
+    }
+  }, "เหลืออีก ", weeklyGoalProgress.daysRemaining, " วันในสัปดาห์นี้ (จ.-อา.)")), forecast.sampleSize > 0 && React.createElement("div", {
     className: "mt-4 rounded-xl p-3.5",
     style: {
       background: C.panel,
