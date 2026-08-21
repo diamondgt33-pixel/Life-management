@@ -3126,14 +3126,14 @@ function GrabProfitMeter() {
   const forecast = useMemo(() => {
     const sorted = [...entries].sort((a, b) => b.date.localeCompare(a.date));
     const recent = sorted.slice(0, 7);
-    const avgProfit = recent.length > 0 ? recent.reduce((a, e) => a + (e.profit || 0), 0) / recent.length : 0;
-    const avgIncome = recent.length > 0 ? recent.reduce((a, e) => a + (e.totalIncome ?? e.income ?? 0), 0) / recent.length : 0;
     const thisMonday = mondayOf(todayISO());
     const weekEntries = entries.filter(e => mondayOf(e.date) === thisMonday);
     const weekSoFarProfit = getWeekAdjustedProfit(thisMonday, entries);
     const weekSoFarIncome = weekEntries.reduce((a, e) => a + (e.totalIncome ?? e.income ?? 0), 0);
     const daysLoggedThisWeek = weekEntries.length;
     const daysRemainingThisWeek = Math.max(0, 7 - daysLoggedThisWeek);
+    const avgProfitThisWeek = daysLoggedThisWeek > 0 ? weekSoFarProfit / daysLoggedThisWeek : 0;
+    const avgIncomeThisWeek = daysLoggedThisWeek > 0 ? weekSoFarIncome / daysLoggedThisWeek : 0;
     const thisMonth = todayISO().slice(0, 7);
     const monthEntries = entries.filter(e => e.date.slice(0, 7) === thisMonth);
     const monthSoFarProfit = monthEntries.reduce((a, e) => a + (e.profit || 0), 0);
@@ -3143,23 +3143,25 @@ function GrabProfitMeter() {
     const m = Number(thisMonth.slice(5, 7));
     const totalDaysInMonth = new Date(y, m, 0).getDate();
     const daysRemainingThisMonth = Math.max(0, totalDaysInMonth - daysLoggedThisMonth);
+    const avgProfitThisMonth = daysLoggedThisMonth > 0 ? monthSoFarProfit / daysLoggedThisMonth : 0;
+    const avgIncomeThisMonth = daysLoggedThisMonth > 0 ? monthSoFarIncome / daysLoggedThisMonth : 0;
     return {
       sampleSize: recent.length,
-      avgProfit,
-      avgIncome,
+      avgProfit: avgProfitThisMonth,
+      avgIncome: avgIncomeThisMonth,
       weekSoFarProfit,
       weekSoFarIncome,
       daysLoggedThisWeek,
       daysRemainingThisWeek,
-      weekProjectedProfit: weekSoFarProfit + avgProfit * daysRemainingThisWeek,
-      weekProjectedIncome: weekSoFarIncome + avgIncome * daysRemainingThisWeek,
+      weekProjectedProfit: weekSoFarProfit + avgProfitThisWeek * daysRemainingThisWeek,
+      weekProjectedIncome: weekSoFarIncome + avgIncomeThisWeek * daysRemainingThisWeek,
       monthSoFarProfit,
       monthSoFarIncome,
       daysLoggedThisMonth,
       totalDaysInMonth,
       daysRemainingThisMonth,
-      monthProjectedProfit: monthSoFarProfit + avgProfit * daysRemainingThisMonth,
-      monthProjectedIncome: monthSoFarIncome + avgIncome * daysRemainingThisMonth
+      monthProjectedProfit: monthSoFarProfit + avgProfitThisMonth * daysRemainingThisMonth,
+      monthProjectedIncome: monthSoFarIncome + avgIncomeThisMonth * daysRemainingThisMonth
     };
   }, [entries]);
   const dayOfWeekStats = useMemo(() => {
@@ -3501,25 +3503,25 @@ function GrabProfitMeter() {
     const y = Number(thisMonth.slice(0, 4));
     const m = Number(thisMonth.slice(5, 7));
     const daysInMonth = new Date(y, m, 0).getDate();
-    const weeksSet = new Set();
-    for (let d = 1; d <= daysInMonth; d++) {
-      const iso = `${thisMonth}-${String(d).padStart(2, "0")}`;
-      weeksSet.add(mondayOf(iso));
-    }
-    const weeksInMonth = weeksSet.size || 1;
-    const weeklyGoal = monthlyGoal > 0 ? Math.round(monthlyGoal / weeksInMonth * 100) / 100 : 0;
     const thisMonday = mondayOf(todayISO());
+    let daysThisWeekInMonth = 0;
+    for (let i = 0; i < 7; i++) {
+      const d = new Date(thisMonday + "T00:00:00");
+      d.setDate(d.getDate() + i);
+      if (toLocalISO(d).slice(0, 7) === thisMonth) daysThisWeekInMonth++;
+    }
+    const weeklyGoal = monthlyGoal > 0 ? Math.round(monthlyGoal * daysThisWeekInMonth / daysInMonth * 100) / 100 : 0;
     const weekEntries = entries.filter(e => mondayOf(e.date) === thisMonday);
     const weekSoFarProfit = getWeekAdjustedProfit(thisMonday, entries);
     const weekExtraIncome = extraIncome.filter(e => mondayOf(e.date) === thisMonday).reduce((a, e) => a + (e.amount || 0), 0);
     const weekProfit = weekSoFarProfit + weekExtraIncome;
     const daysLoggedThisWeek = weekEntries.length;
-    const daysRemainingThisWeek = Math.max(0, 7 - daysLoggedThisWeek);
+    const daysRemainingThisWeek = Math.max(0, daysThisWeekInMonth - daysLoggedThisWeek);
     const remaining = Math.max(0, weeklyGoal - weekProfit);
     const requiredPerDay = daysRemainingThisWeek > 0 ? remaining / daysRemainingThisWeek : remaining;
     const pct = weeklyGoal > 0 ? Math.min(100, weekProfit / weeklyGoal * 100) : 0;
     return {
-      weeksInMonth,
+      daysThisWeekInMonth,
       weeklyGoal,
       weekProfit,
       daysRemaining: daysRemainingThisWeek,
@@ -4947,7 +4949,7 @@ function GrabProfitMeter() {
     style: {
       color: C.textFaint
     }
-  }, "หารจากเป้าหมายรายเดือน (", thb(monthlyGoal), " บาท ÷ ", weeklyGoalProgress.weeksInMonth, " สัปดาห์ที่คาบเกี่ยวเดือนนี้) = เป้าสัปดาห์ละ", " ", thb(weeklyGoalProgress.weeklyGoal), " บาท"), React.createElement("div", {
+  }, "เทียบสัดส่วนจากเป้าหมายรายเดือน (", thb(monthlyGoal), " บาท) เฉพาะ ", weeklyGoalProgress.daysThisWeekInMonth, " วันของสัปดาห์นี้ที่อยู่ในเดือนนี้ = เป้าสัปดาห์นี้", " ", thb(weeklyGoalProgress.weeklyGoal), " บาท"), React.createElement("div", {
     className: "mb-1.5 h-3 w-full overflow-hidden rounded-full",
     style: {
       background: C.bgSoft
@@ -5001,7 +5003,7 @@ function GrabProfitMeter() {
     style: {
       color: C.textFaint
     }
-  }, "เหลืออีก ", weeklyGoalProgress.daysRemaining, " วันในสัปดาห์นี้ (จ.-อา.)")), forecast.sampleSize > 0 && React.createElement("div", {
+  }, "เหลืออีก ", weeklyGoalProgress.daysRemaining, " วันในสัปดาห์นี้ (นับเฉพาะวันที่อยู่ในเดือนนี้)")), forecast.sampleSize > 0 && React.createElement("div", {
     className: "mt-4 rounded-xl p-3.5",
     style: {
       background: C.panel,
@@ -5027,7 +5029,7 @@ function GrabProfitMeter() {
     style: {
       color: C.textFaint
     }
-  }, "คาดการณ์จากค่าเฉลี่ย ", forecast.sampleSize, " วันล่าสุดที่มีข้อมูล"), React.createElement("div", {
+  }, "คาดการณ์จากค่าเฉลี่ยที่ทำได้จริงเฉพาะสัปดาห์นี้/เดือนนี้เท่านั้น (", forecast.daysLoggedThisMonth, " วันที่บันทึกในเดือนนี้) ไม่รวมวันจากเดือนอื่น"), React.createElement("div", {
     className: "mb-3 flex gap-1.5"
   }, [{
     key: "day",
