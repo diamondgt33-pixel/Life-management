@@ -1513,6 +1513,10 @@ function GrabProfitMeter() {
   const turboCount = turboSlots.length > 0 ? turboSlots.length : legacyTurboCount;
   const [fuelCost, setFuelCost] = useState(0);
   const [fuelLiters, setFuelLiters] = useState(0);
+  const [homeChargeKwh, setHomeChargeKwh] = useState(0);
+  const [homeChargeTouPeriod, setHomeChargeTouPeriod] = useState("offpeak");
+  const [outsideChargeKwh, setOutsideChargeKwh] = useState(0);
+  const [outsideChargeCost, setOutsideChargeCost] = useState(0);
   const [vehicles, setVehicles] = useState(DEFAULT_VEHICLES);
   const [activeVehicleId, setActiveVehicleId] = useState("default");
   const [formVehicleId, setFormVehicleId] = useState("default");
@@ -1527,6 +1531,8 @@ function GrabProfitMeter() {
     text: 'สวัสดีครับ ถามข้อมูลในแอปได้เลย เช่น "กำไรเดือนนี้เท่าไหร่" หรือแตะคำถามแนะนำด้านล่างได้เลยครับ'
   }]);
   const [insuranceCostPerDay, setInsuranceCostPerDay] = useState(28.89);
+  const [touOnPeakRate, setTouOnPeakRate] = useState(5.7982);
+  const [touOffPeakRate, setTouOffPeakRate] = useState(2.6369);
   const [otherCost, setOtherCost] = useState(0);
   const [otherLabel, setOtherLabel] = useState("");
   const [chartGranularity, setChartGranularity] = useState("daily");
@@ -1676,6 +1682,8 @@ function GrabProfitMeter() {
         if (s && s.value) {
           const parsed = JSON.parse(s.value);
           if (typeof parsed.insuranceCostPerDay === "number") setInsuranceCostPerDay(parsed.insuranceCostPerDay);
+          if (typeof parsed.touOnPeakRate === "number") setTouOnPeakRate(parsed.touOnPeakRate);
+          if (typeof parsed.touOffPeakRate === "number") setTouOffPeakRate(parsed.touOffPeakRate);
           if (parsed.themeMode) setThemeMode(parsed.themeMode);
           if (typeof parsed.monthlyGoal === "number") setMonthlyGoal(parsed.monthlyGoal);
           if (Array.isArray(parsed.workDays)) setWorkDays(parsed.workDays);
@@ -1817,6 +1825,8 @@ function GrabProfitMeter() {
         await window.storage.set("settings", JSON.stringify({
           turboTiers,
           insuranceCostPerDay,
+          touOnPeakRate,
+          touOffPeakRate,
           themeMode,
           monthlyGoal,
           workDays,
@@ -1825,7 +1835,7 @@ function GrabProfitMeter() {
         }), false);
       } catch (e) {}
     })();
-  }, [turboTiers, insuranceCostPerDay, themeMode, monthlyGoal, workDays, vehicles, activeVehicleId, loaded]);
+  }, [turboTiers, insuranceCostPerDay, touOnPeakRate, touOffPeakRate, themeMode, monthlyGoal, workDays, vehicles, activeVehicleId, loaded]);
   useEffect(() => {
     if (!loaded) return;
     (async () => {
@@ -1971,6 +1981,14 @@ function GrabProfitMeter() {
   const activeEnergyLabel = isActiveVehicleEV ? "ค่าไฟ" : "ค่าน้ำมัน";
   const activeEnergyUnitShort = isActiveVehicleEV ? "kWh" : "ลิตร";
   const activeEfficiencyUnit = isActiveVehicleEV ? "กม./kWh" : "กม./ลิตร";
+  const homeChargeCost = Math.round((homeChargeKwh || 0) * (homeChargeTouPeriod === "onpeak" ? touOnPeakRate : touOffPeakRate) * 100) / 100;
+  useEffect(() => {
+    if (!isFormVehicleEV) return;
+    const combinedCost = Math.round((homeChargeCost + (outsideChargeCost || 0)) * 100) / 100;
+    const combinedKwh = Math.round(((homeChargeKwh || 0) + (outsideChargeKwh || 0)) * 100) / 100;
+    setFuelCost(combinedCost);
+    setFuelLiters(combinedKwh);
+  }, [isFormVehicleEV, homeChargeKwh, homeChargeTouPeriod, outsideChargeKwh, outsideChargeCost, touOnPeakRate, touOffPeakRate]);
   const walletPool = useMemo(() => {
     const thisMonth = todayISO().slice(0, 7);
     const lifetimeProfit = entries.reduce((a, e) => a + (e.profit || 0), 0);
@@ -2241,6 +2259,10 @@ function GrabProfitMeter() {
       setLegacyTurboCount(existing.turboCount || 0);
       setFuelCost(existing.fuelCost || 0);
       setFuelLiters(existing.fuelLiters || 0);
+      setHomeChargeKwh(existing.homeChargeKwh || 0);
+      setHomeChargeTouPeriod(existing.homeChargeTouPeriod || "offpeak");
+      setOutsideChargeKwh(existing.outsideChargeKwh || 0);
+      setOutsideChargeCost(existing.outsideChargeCost || 0);
       setFormVehicleId(existing.vehicleId || activeVehicleId);
       setOtherCost(existing.otherCost || 0);
       setOtherLabel(existing.otherLabel || "");
@@ -2257,6 +2279,10 @@ function GrabProfitMeter() {
       setLegacyTurboCount(0);
       setFuelCost(0);
       setFuelLiters(0);
+      setHomeChargeKwh(0);
+      setHomeChargeTouPeriod("offpeak");
+      setOutsideChargeKwh(0);
+      setOutsideChargeCost(0);
       setFormVehicleId(activeVehicleId);
       setOtherCost(0);
       setOtherLabel("");
@@ -2312,6 +2338,10 @@ function GrabProfitMeter() {
       turboSlots,
       fuelCost,
       fuelLiters,
+      homeChargeKwh: isFormVehicleEV && homeChargeKwh > 0 ? homeChargeKwh : undefined,
+      homeChargeTouPeriod: isFormVehicleEV && homeChargeKwh > 0 ? homeChargeTouPeriod : undefined,
+      outsideChargeKwh: isFormVehicleEV && outsideChargeKwh > 0 ? outsideChargeKwh : undefined,
+      outsideChargeCost: isFormVehicleEV && outsideChargeKwh > 0 ? outsideChargeCost : undefined,
       vehicleId: formVehicleId,
       otherCost,
       otherLabel,
@@ -2331,6 +2361,8 @@ function GrabProfitMeter() {
       await window.storage.set("settings", JSON.stringify({
         turboTiers,
         insuranceCostPerDay,
+        touOnPeakRate,
+        touOffPeakRate,
         themeMode,
         monthlyGoal,
         workDays,
@@ -2667,6 +2699,8 @@ function GrabProfitMeter() {
       settings: {
         turboTiers,
         insuranceCostPerDay,
+        touOnPeakRate,
+        touOffPeakRate,
         themeMode,
         monthlyGoal,
         workDays,
@@ -2706,6 +2740,10 @@ function GrabProfitMeter() {
       รายได้รวม: e.totalIncome ?? e.income,
       "ค่าน้ำมัน/ค่าไฟ": e.fuelCost || 0,
       "ลิตร/kWh": e.fuelLiters || 0,
+      "ชาร์จบ้าน (kWh)": e.homeChargeKwh || 0,
+      "ช่วงเวลาชาร์จบ้าน": e.homeChargeTouPeriod === "onpeak" ? "On-Peak" : e.homeChargeTouPeriod === "offpeak" ? "Off-Peak" : "",
+      "ชาร์จนอกบ้าน (kWh)": e.outsideChargeKwh || 0,
+      "ค่าชาร์จนอกบ้าน": e.outsideChargeCost || 0,
       ค่าประกัน: Math.round((e.insuranceCost || 0) * 100) / 100,
       "ภาษีอินเซนทีฟ+เทอร์โบ 3%": Math.round((e.incentiveTax || 0) * 100) / 100,
       ค่าซ่อมบำรุงเฉลี่ย: Math.round((e.maintenanceCost || 0) * 100) / 100,
@@ -2843,6 +2881,8 @@ function GrabProfitMeter() {
         if (parsed.settings && typeof parsed.settings === "object") {
           const nextTurboTiers = Array.isArray(parsed.settings.turboTiers) ? parsed.settings.turboTiers : turboTiers;
           const nextInsurance = typeof parsed.settings.insuranceCostPerDay === "number" ? parsed.settings.insuranceCostPerDay : insuranceCostPerDay;
+          const nextTouOnPeak = typeof parsed.settings.touOnPeakRate === "number" ? parsed.settings.touOnPeakRate : touOnPeakRate;
+          const nextTouOffPeak = typeof parsed.settings.touOffPeakRate === "number" ? parsed.settings.touOffPeakRate : touOffPeakRate;
           const nextTheme = parsed.settings.themeMode || themeMode;
           const nextMonthlyGoal = typeof parsed.settings.monthlyGoal === "number" ? parsed.settings.monthlyGoal : monthlyGoal;
           const nextWorkDays = Array.isArray(parsed.settings.workDays) ? parsed.settings.workDays : workDays;
@@ -2850,6 +2890,8 @@ function GrabProfitMeter() {
           const nextActiveVehicleId = parsed.settings.activeVehicleId || activeVehicleId;
           setTurboTiers(nextTurboTiers);
           setInsuranceCostPerDay(nextInsurance);
+          setTouOnPeakRate(nextTouOnPeak);
+          setTouOffPeakRate(nextTouOffPeak);
           setThemeMode(nextTheme);
           setMonthlyGoal(nextMonthlyGoal);
           setWorkDays(nextWorkDays);
@@ -2859,6 +2901,8 @@ function GrabProfitMeter() {
           await window.storage.set("settings", JSON.stringify({
             turboTiers: nextTurboTiers,
             insuranceCostPerDay: nextInsurance,
+            touOnPeakRate: nextTouOnPeak,
+            touOffPeakRate: nextTouOffPeak,
             themeMode: nextTheme,
             monthlyGoal: nextMonthlyGoal,
             workDays: nextWorkDays,
@@ -4558,16 +4602,99 @@ function GrabProfitMeter() {
       border: `1px dashed ${C.hairline}`
     },
     type: "button"
-  }, "+ เพิ่มรถอีกคัน")), React.createElement("div", {
+  }, "+ เพิ่มรถอีกคัน")), isFormVehicleEV ? React.createElement(React.Fragment, null, React.createElement("div", {
+    className: "mb-3 rounded-lg p-3",
+    style: {
+      background: C.bgSoft
+    }
+  }, React.createElement("p", {
+    className: "mb-2 text-[11px] font-semibold",
+    style: {
+      color: C.text
+    }
+  }, "🏠 ชาร์จที่บ้าน (คำนวณค่าไฟให้อัตโนมัติ)"), React.createElement(Field, {
+    label: "จำนวนที่ชาร์จ",
+    suffix: "kWh",
+    value: homeChargeKwh,
+    onChange: setHomeChargeKwh,
+    placeholder: "0"
+  }), homeChargeKwh > 0 && React.createElement(React.Fragment, null, React.createElement("div", {
+    className: "mt-2 flex gap-1.5"
+  }, React.createElement("button", {
+    type: "button",
+    onClick: () => setHomeChargeTouPeriod("offpeak"),
+    className: "flex-1 rounded-lg py-1.5 text-[11px] font-medium",
+    style: {
+      background: homeChargeTouPeriod === "offpeak" ? C.blue : C.panel,
+      color: homeChargeTouPeriod === "offpeak" ? "#FFFFFF" : C.textMuted
+    }
+  }, "Off-Peak (", thb(touOffPeakRate), " ฿/kWh)"), React.createElement("button", {
+    type: "button",
+    onClick: () => setHomeChargeTouPeriod("onpeak"),
+    className: "flex-1 rounded-lg py-1.5 text-[11px] font-medium",
+    style: {
+      background: homeChargeTouPeriod === "onpeak" ? C.amber : C.panel,
+      color: homeChargeTouPeriod === "onpeak" ? "#FFFFFF" : C.textMuted
+    }
+  }, "On-Peak (", thb(touOnPeakRate), " ฿/kWh)")), React.createElement("p", {
+    className: "mt-2 text-[11px]",
+    style: {
+      color: C.textFaint
+    }
+  }, "Off-Peak = กลางคืน 22:00-9:00 + เสาร์-อาทิตย์-วันหยุดนักขัตฤกษ์ ทั้งวัน, On-Peak = วันธรรมดา 9:00-22:00 (มิเตอร์ TOU) — คำนวณได้", " ", React.createElement("strong", {
+    style: {
+      color: C.text
+    }
+  }, thb(homeChargeCost), " บาท")))), React.createElement("div", {
+    className: "mb-3 rounded-lg p-3",
+    style: {
+      background: C.bgSoft
+    }
+  }, React.createElement("p", {
+    className: "mb-2 text-[11px] font-semibold",
+    style: {
+      color: C.text
+    }
+  }, "🔌 ชาร์จนอกบ้าน (สถานีชาร์จสาธารณะ)"), React.createElement("div", {
     className: "grid grid-cols-2 gap-2.5"
   }, React.createElement(Field, {
-    label: `${energyLabel}ที่จ่ายจริง (ตอนเติมเต็ม${isFormVehicleEV ? "" : "ถัง"})`,
+    label: "จำนวนที่ชาร์จ",
+    suffix: "kWh",
+    value: outsideChargeKwh,
+    onChange: setOutsideChargeKwh,
+    placeholder: "0"
+  }), React.createElement(Field, {
+    label: "จ่ายจริง",
+    suffix: "บาท",
+    value: outsideChargeCost,
+    onChange: setOutsideChargeCost,
+    placeholder: "0"
+  }))), React.createElement("div", {
+    className: "mb-2 flex items-center justify-between rounded-lg px-3 py-2",
+    style: {
+      background: C.greenDim
+    }
+  }, React.createElement("span", {
+    className: "text-[11px]",
+    style: {
+      color: C.greenDeep
+    }
+  }, "รวมค่าไฟวันนี้ (", thb(fuelLiters), " kWh)"), React.createElement("span", {
+    className: "text-xs font-semibold",
+    style: {
+      color: C.greenDeep,
+      fontFamily: "'JetBrains Mono', monospace"
+    }
+  }, thb(fuelCost), " ฿"))) : React.createElement("div", {
+    className: "grid grid-cols-2 gap-2.5"
+  }, React.createElement(Field, {
+    label: `${energyLabel}ที่จ่ายจริง (ตอนเติมเต็มถัง)`,
     suffix: "บาท",
     value: fuelCost,
     onChange: setFuelCost,
     placeholder: "0"
   }), React.createElement(Field, {
-    label: `จำนวน${energyUnit}ที่${isFormVehicleEV ? "ชาร์จ" : "เติม"} (ไม่บังคับ)`,
+    label: `จำนวน${energyUnit}ที่เติม (ไม่บังคับ)`,
     suffix: energyUnitShort,
     value: fuelLiters,
     onChange: setFuelLiters,
@@ -4624,7 +4751,36 @@ function GrabProfitMeter() {
     style: {
       color: income > 0 ? C.green : C.textFaint
     }
-  }, income > 0 ? `หักแล้ว ${thb(insuranceCost)} บาท สำหรับวันนี้ (มีรายได้)` : "ยังไม่หัก เพราะวันนี้ยังไม่มีรายได้")), React.createElement(Field, {
+  }, income > 0 ? `หักแล้ว ${thb(insuranceCost)} บาท สำหรับวันนี้ (มีรายได้)` : "ยังไม่หัก เพราะวันนี้ยังไม่มีรายได้")), vehicles.some(v => v.type === "ev") && React.createElement("div", {
+    className: "rounded-lg p-3",
+    style: {
+      background: C.bgSoft
+    }
+  }, React.createElement("p", {
+    className: "mb-2 text-[11px] font-semibold",
+    style: {
+      color: C.text
+    }
+  }, "⚡ อัตราค่าไฟ TOU (สำหรับคำนวณค่าชาร์จที่บ้าน)"), React.createElement("div", {
+    className: "grid grid-cols-2 gap-2.5"
+  }, React.createElement(Field, {
+    label: "Off-Peak",
+    suffix: "บาท/kWh",
+    value: touOffPeakRate,
+    onChange: setTouOffPeakRate,
+    placeholder: "2.6369"
+  }), React.createElement(Field, {
+    label: "On-Peak",
+    suffix: "บาท/kWh",
+    value: touOnPeakRate,
+    onChange: setTouOnPeakRate,
+    placeholder: "5.7982"
+  })), React.createElement("p", {
+    className: "mt-1.5 text-[11px]",
+    style: {
+      color: C.textFaint
+    }
+  }, "ปรับให้ตรงกับอัตราจริงของมิเตอร์ TOU ได้ (ค่าเริ่มต้นเป็นอัตราโดยประมาณ อาจไม่ตรงกับบิลจริงเป๊ะ)")), React.createElement(Field, {
     label: "ค่าใช้จ่ายอื่น (ค่าทางด่วน, อาหาร, ซ่อมบำรุง ฯลฯ)",
     suffix: "บาท",
     value: otherCost,
@@ -6376,10 +6532,10 @@ function GrabProfitMeter() {
     }
   }, monthLabelThaiLong(fixedExpViewMonth)), React.createElement("button", {
     onClick: () => setFixedExpViewMonth(m => shiftMonth(m, 1)),
-    disabled: fixedExpViewMonth >= todayISO().slice(0, 7),
+    disabled: fixedExpViewMonth >= addMonthsToYm(todayISO().slice(0, 7), 24),
     className: "shrink-0 p-2",
     style: {
-      opacity: fixedExpViewMonth >= todayISO().slice(0, 7) ? 0.3 : 1
+      opacity: fixedExpViewMonth >= addMonthsToYm(todayISO().slice(0, 7), 24) ? 0.3 : 1
     },
     "aria-label": "เดือนถัดไป",
     type: "button"
@@ -6387,7 +6543,13 @@ function GrabProfitMeter() {
     name: "chevronRight",
     size: 16,
     color: C.textMuted
-  }))), React.createElement("div", {
+  }))), fixedExpViewMonth > todayISO().slice(0, 7) && React.createElement("p", {
+    className: "mb-2.5 rounded-lg px-3 py-2 text-[11px] leading-relaxed",
+    style: {
+      background: C.amberDim,
+      color: "#92400E"
+    }
+  }, "📅 กำลังดูตัวอย่างล่วงหน้า — ยังไม่มีรายได้ของเดือนนี้จริง ใช้เช็คว่ารายการผ่อน/บิลที่ตั้งไว้จะครอบคลุมไหมเมื่อถึงเดือนนั้น"), React.createElement("div", {
     className: "mb-3 flex items-end justify-between gap-3"
   }, React.createElement("div", null, React.createElement("div", {
     className: "text-3xl font-bold leading-none",
