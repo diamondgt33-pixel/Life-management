@@ -1591,6 +1591,11 @@ function GrabProfitMeter() {
   const [transferAmounts, setTransferAmounts] = useState({});
   const [walletTransfers, setWalletTransfers] = useState([]);
   const [walletPoolAdjustment, setWalletPoolAdjustment] = useState(0);
+  const [monthlyReconciliations, setMonthlyReconciliations] = useState({});
+  const [reconcileMonth, setReconcileMonth] = useState(shiftMonth(todayISO().slice(0, 7), -1));
+  const [reconcileBankAmount, setReconcileBankAmount] = useState(0);
+  const [reconcileCashAmount, setReconcileCashAmount] = useState(0);
+  const [showReconcileConfirm, setShowReconcileConfirm] = useState(false);
   const [showResetPoolConfirm, setShowResetPoolConfirm] = useState(false);
   const [showExtraIncomeForm, setShowExtraIncomeForm] = useState(false);
   const [extraIncomeDate, setExtraIncomeDate] = useState(todayISO());
@@ -1694,6 +1699,10 @@ function GrabProfitMeter() {
       try {
         const wpa = await window.storage.get("wallet-pool-adjustment", false);
         if (wpa && wpa.value) setWalletPoolAdjustment(JSON.parse(wpa.value));
+      } catch (e) {}
+      try {
+        const mr = await window.storage.get("monthly-reconciliations", false);
+        if (mr && mr.value) setMonthlyReconciliations(JSON.parse(mr.value));
       } catch (e) {}
       try {
         const pe = await window.storage.get("paid-expenses", false);
@@ -2803,6 +2812,80 @@ function GrabProfitMeter() {
       reportSaveError(e);
     }
   };
+  const calculatedIncomeForMonth = ym => {
+    const grabProfit = entries.filter(e => e.date.slice(0, 7) === ym).reduce((a, e) => a + (e.profit || 0), 0);
+    const tourProfit = tourTrips.filter(t => t.date.slice(0, 7) === ym).reduce((a, t) => a + (t.profit || 0), 0);
+    const extra = extraIncome.filter(e => e.date.slice(0, 7) === ym).reduce((a, e) => a + (e.amount || 0), 0);
+    return Math.round((grabProfit + tourProfit + extra) * 100) / 100;
+  };
+  const getOrCreateCashWallet = async () => {
+    const latest = await readLatestArray("wallets", wallets);
+    const existing = latest.find(w => w.isCashWallet);
+    if (existing) return {
+      wallet: existing,
+      list: latest
+    };
+    const cashWallet = {
+      id: `wal-cash-${Date.now()}`,
+      name: "เงินสด",
+      balance: 0,
+      isCashWallet: true
+    };
+    const next = [...latest, cashWallet];
+    setWallets(next);
+    try {
+      await window.storage.set("wallets", JSON.stringify(next), false);
+    } catch (e) {
+      reportSaveError(e);
+    }
+    return {
+      wallet: cashWallet,
+      list: next
+    };
+  };
+  const saveReconciliation = async () => {
+    setSaveError("");
+    if (reconcileMonth >= todayISO().slice(0, 7)) {
+      setSaveError("กระทบยอดได้เฉพาะเดือนที่จบไปแล้วเท่านั้น เดือนปัจจุบันยังมีรายได้ไหลเข้าต่อเนื่องอยู่");
+      return;
+    }
+    const calculated = calculatedIncomeForMonth(reconcileMonth);
+    const actualTotal = Math.round(((reconcileBankAmount || 0) + (reconcileCashAmount || 0)) * 100) / 100;
+    const diff = Math.round((calculated - actualTotal) * 100) / 100;
+    const newAdjustment = Math.round((walletPoolAdjustment + diff) * 100) / 100;
+    setWalletPoolAdjustment(newAdjustment);
+    try {
+      await window.storage.set("wallet-pool-adjustment", JSON.stringify(newAdjustment), false);
+    } catch (e) {
+      reportSaveError(e);
+      return;
+    }
+    if (reconcileCashAmount > 0) {
+      const {
+        wallet
+      } = await getOrCreateCashWallet();
+      await adjustWalletBalance(wallet.id, reconcileCashAmount);
+    }
+    const record = {
+      bankAmount: reconcileBankAmount || 0,
+      cashAmount: reconcileCashAmount || 0,
+      calculated,
+      diff,
+      reconciledAt: new Date().toISOString()
+    };
+    const latest = await readLatestArray("monthly-reconciliations", monthlyReconciliations);
+    const next = {
+      ...latest,
+      [reconcileMonth]: record
+    };
+    setMonthlyReconciliations(next);
+    try {
+      await window.storage.set("monthly-reconciliations", JSON.stringify(next), false);
+    } catch (e) {
+      reportSaveError(e);
+    }
+    setShowReconcileConfirm(false);
+  };
   const addExtraIncome = async () => {
     setSaveError("");
     if (!extraIncomeAmount || extraIncomeAmount <= 0) return;
@@ -2850,6 +2933,7 @@ function GrabProfitMeter() {
       walletPoolAdjustment,
       tourPackages,
       tourTrips,
+      monthlyReconciliations,
       settings: {
         turboTiers,
         insuranceCostPerDay,
@@ -3043,6 +3127,15 @@ function GrabProfitMeter() {
           setTourTrips(merged);
           await window.storage.set("tour-trips", JSON.stringify(merged), false);
           restoredParts.push("ทริปไพร์เวททัว");
+        }
+        if (parsed.monthlyReconciliations && typeof parsed.monthlyReconciliations === "object") {
+          const mergedRecon = {
+            ...monthlyReconciliations,
+            ...parsed.monthlyReconciliations
+          };
+          setMonthlyReconciliations(mergedRecon);
+          await window.storage.set("monthly-reconciliations", JSON.stringify(mergedRecon), false);
+          restoredParts.push("การกระทบยอดรายเดือน");
         }
         if (parsed.settings && typeof parsed.settings === "object") {
           const nextTurboTiers = Array.isArray(parsed.settings.turboTiers) ? parsed.settings.turboTiers : turboTiers;
@@ -7305,7 +7398,7 @@ function GrabProfitMeter() {
     style: {
       color: C.text
     }
-  }, "👛 ", w.name), React.createElement("span", {
+  }, w.isCashWallet ? "💵" : "👛", " ", w.name), React.createElement("span", {
     className: "text-xs font-semibold",
     style: {
       color: w.balance < 0 ? C.red : C.text,
@@ -7489,6 +7582,170 @@ function GrabProfitMeter() {
     },
     type: "button"
   }, "↩️ ล้างจุดรีเซ็ต (นับย้อนกลับให้ครบ)"))), React.createElement("div", {
+    className: "mb-4 rounded-xl p-3.5",
+    style: {
+      background: C.panel,
+      border: `1px solid ${C.hairline}`,
+      borderLeft: `3px solid ${C.amber}`
+    }
+  }, React.createElement("div", {
+    className: "mb-1 flex items-center gap-2 text-xs font-semibold",
+    style: {
+      color: C.text
+    }
+  }, React.createElement("span", {
+    className: "flex h-6 w-6 items-center justify-center rounded-full",
+    style: {
+      background: "rgba(245,158,11,0.15)"
+    }
+  }, React.createElement("span", {
+    style: {
+      fontSize: 13
+    }
+  }, "⚖️")), "กระทบยอดสิ้นเดือน"), React.createElement("p", {
+    className: "mb-3 text-[11px] leading-relaxed",
+    style: {
+      color: C.textFaint
+    }
+  }, "เทียบกำไรที่ระบบคำนวณได้ กับเงินจริงที่ได้รับ (โอนเข้าบัญชี + เงินสด) — ถ้าไม่ตรงกัน จะยึดเงินจริงเป็นหลักเสมอ"), React.createElement("div", {
+    className: "mb-2.5 flex items-center justify-between gap-1 rounded-lg",
+    style: {
+      background: C.bgSoft
+    }
+  }, React.createElement("button", {
+    onClick: () => setReconcileMonth(m => shiftMonth(m, -1)),
+    className: "shrink-0 p-2",
+    "aria-label": "เดือนก่อนหน้า",
+    type: "button"
+  }, React.createElement(Icon, {
+    name: "chevronLeft",
+    size: 16,
+    color: C.textMuted
+  })), React.createElement("span", {
+    className: "text-[12px] font-medium",
+    style: {
+      color: C.text
+    }
+  }, monthLabelThaiLong(reconcileMonth)), React.createElement("button", {
+    onClick: () => setReconcileMonth(m => shiftMonth(m, 1)),
+    disabled: reconcileMonth >= shiftMonth(todayISO().slice(0, 7), -1),
+    className: "shrink-0 p-2",
+    style: {
+      opacity: reconcileMonth >= shiftMonth(todayISO().slice(0, 7), -1) ? 0.3 : 1
+    },
+    "aria-label": "เดือนถัดไป",
+    type: "button"
+  }, React.createElement(Icon, {
+    name: "chevronRight",
+    size: 16,
+    color: C.textMuted
+  }))), React.createElement("p", {
+    className: "mb-2.5 text-[11px]",
+    style: {
+      color: C.textFaint
+    }
+  }, "กระทบยอดได้เฉพาะเดือนที่จบไปแล้วเท่านั้น (เดือนปัจจุบันรายได้ยังไม่นิ่ง) — แต่ไม่จำกัดว่าต้องทำวันไหน ย้อนทำทีหลังได้เสมอ"), React.createElement("div", {
+    className: "mb-2.5 flex items-center justify-between rounded-lg px-3 py-2",
+    style: {
+      background: C.bgSoft
+    }
+  }, React.createElement("span", {
+    className: "text-[11px]",
+    style: {
+      color: C.textFaint
+    }
+  }, "กำไรที่ระบบคำนวณได้ (Grab + ทัว + รายได้พิเศษ)"), React.createElement("span", {
+    className: "text-xs font-semibold",
+    style: {
+      color: C.text,
+      fontFamily: "'JetBrains Mono', monospace"
+    }
+  }, thb(calculatedIncomeForMonth(reconcileMonth)), " ฿")), React.createElement("div", {
+    className: "mb-2.5 grid grid-cols-2 gap-2.5"
+  }, React.createElement(Field, {
+    label: "โอนเข้าบัญชีจริง",
+    suffix: "บาท",
+    value: reconcileBankAmount,
+    onChange: setReconcileBankAmount,
+    placeholder: "0"
+  }), React.createElement(Field, {
+    label: "เงินสดที่ได้รับจริง",
+    suffix: "บาท",
+    value: reconcileCashAmount,
+    onChange: setReconcileCashAmount,
+    placeholder: "0"
+  })), (() => {
+    const calculated = calculatedIncomeForMonth(reconcileMonth);
+    const actualTotal = Math.round(((reconcileBankAmount || 0) + (reconcileCashAmount || 0)) * 100) / 100;
+    const diff = Math.round((calculated - actualTotal) * 100) / 100;
+    const matches = Math.abs(diff) < 0.01;
+    return React.createElement("div", {
+      className: "mb-2.5 rounded-lg px-3 py-2.5",
+      style: {
+        background: matches ? C.greenDim : C.redDim
+      }
+    }, React.createElement("div", {
+      className: "flex items-center justify-between text-xs"
+    }, React.createElement("span", {
+      style: {
+        color: matches ? C.greenDeep : C.red
+      }
+    }, "รวมเงินจริง"), React.createElement("span", {
+      className: "font-semibold",
+      style: {
+        color: matches ? C.greenDeep : C.red,
+        fontFamily: "'JetBrains Mono', monospace"
+      }
+    }, thb(actualTotal), " ฿")), React.createElement("div", {
+      className: "mt-1 text-[11px]",
+      style: {
+        color: matches ? C.greenDeep : C.red
+      }
+    }, matches ? "✅ ตรงกับที่คำนวณไว้พอดี" : diff > 0 ? `⚠️ เงินจริงขาดไป ${thb(diff)} บาท จากที่คำนวณไว้ (ระบบจะปรับยอด "ยังไม่ได้จัดสรร" ลงตามนี้)` : `🎉 เงินจริงได้มากกว่าที่คำนวณไว้ ${thb(Math.abs(diff))} บาท (ระบบจะปรับยอด "ยังไม่ได้จัดสรร" เพิ่มตามนี้)`));
+  })(), monthlyReconciliations[reconcileMonth] && React.createElement("p", {
+    className: "mb-2.5 text-[11px]",
+    style: {
+      color: C.textFaint
+    }
+  }, "เคยกระทบยอดเดือนนี้แล้วเมื่อ ", thaiDate(monthlyReconciliations[reconcileMonth].reconciledAt.slice(0, 10)), " — กดยืนยันอีกครั้งเพื่ออัปเดตยอดใหม่"), !showReconcileConfirm ? React.createElement("button", {
+    onClick: () => setShowReconcileConfirm(true),
+    disabled: !reconcileBankAmount && !reconcileCashAmount,
+    className: "w-full rounded-lg py-2.5 text-sm font-semibold",
+    style: {
+      background: C.amber,
+      color: "#FFFFFF",
+      opacity: !reconcileBankAmount && !reconcileCashAmount ? 0.5 : 1
+    },
+    type: "button"
+  }, "ยืนยันยอดจริง") : React.createElement("div", {
+    className: "rounded-lg p-3",
+    style: {
+      background: C.redDim
+    }
+  }, React.createElement("p", {
+    className: "mb-2 text-[11px] leading-relaxed",
+    style: {
+      color: C.red
+    }
+  }, "ยืนยันยอดกระทบยอดของ ", monthLabelThaiLong(reconcileMonth), " — เงินสดที่กรอกจะเข้ากระเป๋า \"เงินสด\" (สร้างให้อัตโนมัติถ้ายังไม่มี) และยอด \"ยังไม่ได้จัดสรร\" จะถูกปรับให้ตรงกับเงินจริง"), React.createElement("div", {
+    className: "flex gap-2"
+  }, React.createElement("button", {
+    onClick: () => setShowReconcileConfirm(false),
+    className: "flex-1 rounded-lg py-2 text-xs font-medium",
+    style: {
+      background: C.panel,
+      color: C.textMuted
+    },
+    type: "button"
+  }, "ยกเลิก"), React.createElement("button", {
+    onClick: saveReconciliation,
+    className: "flex-1 rounded-lg py-2 text-xs font-semibold",
+    style: {
+      background: C.red,
+      color: "#FFFFFF"
+    },
+    type: "button"
+  }, "ยืนยัน")))), React.createElement("div", {
     className: "rounded-xl p-3.5",
     style: {
       background: dailyExpenseSummary.sufficient ? "var(--c-hero-green)" : "var(--c-hero-red)",
