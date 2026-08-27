@@ -3437,8 +3437,16 @@ function GrabProfitMeter() {
     const daysLoggedThisWeek = weekEntries.length;
     const todayDate = new Date(today + "T00:00:00");
     const mondayDate = new Date(thisMonday + "T00:00:00");
-    const daysElapsedThisWeek = Math.round((todayDate - mondayDate) / 86400000) + 1;
-    const daysRemainingThisWeek = Math.max(0, 7 - daysElapsedThisWeek);
+    const todayLoggedThisWeek = weekEntries.some(e => e.date === today);
+    let daysRemainingThisWeek = 0;
+    for (let i = 0; i < 7; i++) {
+      const d = new Date(mondayDate);
+      d.setDate(d.getDate() + i);
+      const dIso = toLocalISO(d);
+      if (d < todayDate) continue;
+      if (dIso === today && todayLoggedThisWeek) continue;
+      if (workDays.includes(weekdayIndexMonFirst(dIso))) daysRemainingThisWeek++;
+    }
     const avgProfitThisWeek = daysLoggedThisWeek > 0 ? weekSoFarProfit / daysLoggedThisWeek : 0;
     const avgIncomeThisWeek = daysLoggedThisWeek > 0 ? weekSoFarIncome / daysLoggedThisWeek : 0;
     const thisMonth = today.slice(0, 7);
@@ -3450,13 +3458,21 @@ function GrabProfitMeter() {
     const m = Number(thisMonth.slice(5, 7));
     const totalDaysInMonth = new Date(y, m, 0).getDate();
     const dayOfMonth = Number(today.slice(8, 10));
-    const daysRemainingThisMonth = Math.max(0, totalDaysInMonth - dayOfMonth);
+    const todayLoggedThisMonth = monthEntries.some(e => e.date === today);
+    let daysRemainingThisMonth = 0;
+    for (let d = dayOfMonth; d <= totalDaysInMonth; d++) {
+      if (d === dayOfMonth && todayLoggedThisMonth) continue;
+      const iso = `${thisMonth}-${String(d).padStart(2, "0")}`;
+      if (workDays.includes(weekdayIndexMonFirst(iso))) daysRemainingThisMonth++;
+    }
     const avgProfitThisMonth = daysLoggedThisMonth > 0 ? monthSoFarProfit / daysLoggedThisMonth : 0;
     const avgIncomeThisMonth = daysLoggedThisMonth > 0 ? monthSoFarIncome / daysLoggedThisMonth : 0;
     return {
       sampleSize: recent.length,
       avgProfit: avgProfitThisMonth,
       avgIncome: avgIncomeThisMonth,
+      avgProfitThisWeek,
+      avgIncomeThisWeek,
       weekSoFarProfit,
       weekSoFarIncome,
       daysLoggedThisWeek,
@@ -3471,7 +3487,7 @@ function GrabProfitMeter() {
       monthProjectedProfit: monthSoFarProfit + avgProfitThisMonth * daysRemainingThisMonth,
       monthProjectedIncome: monthSoFarIncome + avgIncomeThisMonth * daysRemainingThisMonth
     };
-  }, [entries]);
+  }, [entries, workDays]);
   const dayOfWeekStats = useMemo(() => {
     const buckets = Array.from({
       length: 7
@@ -5568,7 +5584,7 @@ function GrabProfitMeter() {
       color: C.text,
       fontFamily: "'JetBrains Mono', monospace"
     }
-  }, thb(forecast.avgProfit * forecast.daysRemainingThisWeek), " ฿")))), forecastPeriod === "month" && React.createElement(React.Fragment, null, React.createElement("div", {
+  }, thb(forecast.avgProfitThisWeek * forecast.daysRemainingThisWeek), " ฿")))), forecastPeriod === "month" && React.createElement(React.Fragment, null, React.createElement("div", {
     className: "mb-2 flex items-end justify-between"
   }, React.createElement("div", null, React.createElement("div", {
     className: "text-[11px]",
