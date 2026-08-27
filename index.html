@@ -3429,15 +3429,19 @@ function GrabProfitMeter() {
   const forecast = useMemo(() => {
     const sorted = [...entries].sort((a, b) => b.date.localeCompare(a.date));
     const recent = sorted.slice(0, 7);
-    const thisMonday = mondayOf(todayISO());
+    const today = todayISO();
+    const thisMonday = mondayOf(today);
     const weekEntries = entries.filter(e => mondayOf(e.date) === thisMonday);
     const weekSoFarProfit = getWeekAdjustedProfit(thisMonday, entries);
     const weekSoFarIncome = weekEntries.reduce((a, e) => a + (e.totalIncome ?? e.income ?? 0), 0);
     const daysLoggedThisWeek = weekEntries.length;
-    const daysRemainingThisWeek = Math.max(0, 7 - daysLoggedThisWeek);
+    const todayDate = new Date(today + "T00:00:00");
+    const mondayDate = new Date(thisMonday + "T00:00:00");
+    const daysElapsedThisWeek = Math.round((todayDate - mondayDate) / 86400000) + 1;
+    const daysRemainingThisWeek = Math.max(0, 7 - daysElapsedThisWeek);
     const avgProfitThisWeek = daysLoggedThisWeek > 0 ? weekSoFarProfit / daysLoggedThisWeek : 0;
     const avgIncomeThisWeek = daysLoggedThisWeek > 0 ? weekSoFarIncome / daysLoggedThisWeek : 0;
-    const thisMonth = todayISO().slice(0, 7);
+    const thisMonth = today.slice(0, 7);
     const monthEntries = entries.filter(e => e.date.slice(0, 7) === thisMonth);
     const monthSoFarProfit = monthEntries.reduce((a, e) => a + (e.profit || 0), 0);
     const monthSoFarIncome = monthEntries.reduce((a, e) => a + (e.totalIncome ?? e.income ?? 0), 0);
@@ -3445,7 +3449,8 @@ function GrabProfitMeter() {
     const y = Number(thisMonth.slice(0, 4));
     const m = Number(thisMonth.slice(5, 7));
     const totalDaysInMonth = new Date(y, m, 0).getDate();
-    const daysRemainingThisMonth = Math.max(0, totalDaysInMonth - daysLoggedThisMonth);
+    const dayOfMonth = Number(today.slice(8, 10));
+    const daysRemainingThisMonth = Math.max(0, totalDaysInMonth - dayOfMonth);
     const avgProfitThisMonth = daysLoggedThisMonth > 0 ? monthSoFarProfit / daysLoggedThisMonth : 0;
     const avgIncomeThisMonth = daysLoggedThisMonth > 0 ? monthSoFarIncome / daysLoggedThisMonth : 0;
     return {
@@ -3657,17 +3662,20 @@ function GrabProfitMeter() {
     const sortedExp = [...relevantExpenses].sort((a, b) => b.date.localeCompare(a.date));
     const recentDates = [...new Set(sortedExp.map(e => e.date))].slice(0, 7);
     const avgDailyExpense = recentDates.length > 0 ? recentDates.reduce((sum, d) => sum + relevantExpenses.filter(e => e.date === d).reduce((a, e) => a + (e.amount || 0), 0), 0) / recentDates.length : 0;
-    const thisWeekMonday = mondayOf(todayISO());
+    const today = todayISO();
+    const thisWeekMonday = mondayOf(today);
     const weekSoFar = relevantExpenses.filter(e => mondayOf(e.date) === thisWeekMonday).reduce((a, e) => a + (e.amount || 0), 0);
-    const daysLoggedThisWeek = new Set(relevantExpenses.filter(e => mondayOf(e.date) === thisWeekMonday).map(e => e.date)).size;
-    const daysRemainingThisWeek = Math.max(0, 7 - daysLoggedThisWeek);
-    const thisMonth = todayISO().slice(0, 7);
+    const todayDate = new Date(today + "T00:00:00");
+    const mondayDate = new Date(thisWeekMonday + "T00:00:00");
+    const daysElapsedThisWeek = Math.round((todayDate - mondayDate) / 86400000) + 1;
+    const daysRemainingThisWeek = Math.max(0, 7 - daysElapsedThisWeek);
+    const thisMonth = today.slice(0, 7);
     const monthSoFar = relevantExpenses.filter(e => e.date.slice(0, 7) === thisMonth).reduce((a, e) => a + (e.amount || 0), 0);
-    const daysLoggedThisMonth = new Set(relevantExpenses.filter(e => e.date.slice(0, 7) === thisMonth).map(e => e.date)).size;
     const y = Number(thisMonth.slice(0, 4));
     const m = Number(thisMonth.slice(5, 7));
     const totalDaysInMonth = new Date(y, m, 0).getDate();
-    const daysRemainingThisMonth = Math.max(0, totalDaysInMonth - daysLoggedThisMonth);
+    const dayOfMonth = Number(today.slice(8, 10));
+    const daysRemainingThisMonth = Math.max(0, totalDaysInMonth - dayOfMonth);
     return {
       sampleSize: recentDates.length,
       avgDailyExpense,
@@ -3814,12 +3822,16 @@ function GrabProfitMeter() {
       if (toLocalISO(d).slice(0, 7) === thisMonth) daysThisWeekInMonth++;
     }
     const weeklyGoal = monthlyGoal > 0 ? Math.round(monthlyGoal * daysThisWeekInMonth / daysInMonth * 100) / 100 : 0;
-    const weekEntries = entries.filter(e => mondayOf(e.date) === thisMonday);
     const weekSoFarProfit = getWeekAdjustedProfit(thisMonday, entries);
     const weekExtraIncome = extraIncome.filter(e => mondayOf(e.date) === thisMonday).reduce((a, e) => a + (e.amount || 0), 0);
     const weekProfit = weekSoFarProfit + weekExtraIncome;
-    const daysLoggedThisWeek = weekEntries.length;
-    const daysRemainingThisWeek = Math.max(0, daysThisWeekInMonth - daysLoggedThisWeek);
+    const todayDate = new Date(todayISO() + "T00:00:00");
+    let daysRemainingThisWeek = 0;
+    for (let i = 0; i < 7; i++) {
+      const d = new Date(thisMonday + "T00:00:00");
+      d.setDate(d.getDate() + i);
+      if (toLocalISO(d).slice(0, 7) === thisMonth && d >= todayDate) daysRemainingThisWeek++;
+    }
     const remaining = Math.max(0, weeklyGoal - weekProfit);
     const requiredPerDay = daysRemainingThisWeek > 0 ? remaining / daysRemainingThisWeek : remaining;
     const pct = weeklyGoal > 0 ? Math.min(100, weekProfit / weeklyGoal * 100) : 0;
