@@ -1605,6 +1605,8 @@ function GrabProfitMeter() {
   const [extraIncomeDate, setExtraIncomeDate] = useState(todayISO());
   const [extraIncomeAmount, setExtraIncomeAmount] = useState(0);
   const [extraIncomeNote, setExtraIncomeNote] = useState("");
+  const [extraIncomeReceiptImage, setExtraIncomeReceiptImage] = useState(null);
+  const extraIncomeReceiptInputRef = useRef(null);
   const [dailyExpDate, setDailyExpDate] = useState(todayISO());
   const [dailyExpCategory, setDailyExpCategory] = useState(DAILY_EXPENSE_CATEGORIES[0]);
   const [dailyExpAmount, setDailyExpAmount] = useState(0);
@@ -2500,6 +2502,17 @@ function GrabProfitMeter() {
       if (dailyExpReceiptInputRef.current) dailyExpReceiptInputRef.current.value = "";
     }
   };
+  const handleExtraIncomeReceiptFile = async file => {
+    if (!file) return;
+    try {
+      const compressed = await compressReceiptImage(file);
+      setExtraIncomeReceiptImage(compressed);
+    } catch (e) {
+      console.error("Receipt processing failed", e);
+    } finally {
+      if (extraIncomeReceiptInputRef.current) extraIncomeReceiptInputRef.current.value = "";
+    }
+  };
   const addDailyExpense = async () => {
     setSaveError("");
     if (!dailyExpAmount || dailyExpAmount <= 0) return;
@@ -2897,7 +2910,8 @@ function GrabProfitMeter() {
       id: `${extraIncomeDate}-${Date.now()}`,
       date: extraIncomeDate,
       amount: extraIncomeAmount,
-      note: extraIncomeNote
+      note: extraIncomeNote,
+      receiptImage: extraIncomeReceiptImage || null
     };
     const latest = await readLatestArray("extra-income", extraIncome);
     const next = [record, ...latest].sort((a, b) => b.date.localeCompare(a.date));
@@ -2909,6 +2923,7 @@ function GrabProfitMeter() {
     }
     setExtraIncomeAmount(0);
     setExtraIncomeNote("");
+    setExtraIncomeReceiptImage(null);
   };
   const deleteExtraIncome = async id => {
     setSaveError("");
@@ -3842,9 +3857,7 @@ function GrabProfitMeter() {
       if (toLocalISO(d).slice(0, 7) === thisMonth) daysThisWeekInMonth++;
     }
     const weeklyGoal = monthlyGoal > 0 ? Math.round(monthlyGoal * daysThisWeekInMonth / daysInMonth * 100) / 100 : 0;
-    const weekSoFarProfit = getWeekAdjustedProfit(thisMonday, entries);
-    const weekExtraIncome = extraIncome.filter(e => mondayOf(e.date) === thisMonday).reduce((a, e) => a + (e.amount || 0), 0);
-    const weekProfit = weekSoFarProfit + weekExtraIncome;
+    const weekProfit = entries.filter(e => mondayOf(e.date) === thisMonday).reduce((a, e) => a + (e.profit || 0), 0);
     const todayDate = new Date(todayISO() + "T00:00:00");
     let daysRemainingThisWeek = 0;
     for (let i = 0; i < 7; i++) {
@@ -3865,7 +3878,7 @@ function GrabProfitMeter() {
       pct,
       achieved: weeklyGoal > 0 && weekProfit >= weeklyGoal
     };
-  }, [entries, extraIncome, monthlyGoal]);
+  }, [entries, monthlyGoal]);
   const chartData = useMemo(() => {
     const sorted = [...entries].sort((a, b) => a.date.localeCompare(b.date));
     if (sorted.length === 0) return [];
@@ -6968,6 +6981,52 @@ function GrabProfitMeter() {
       color: C.text,
       border: `1px solid ${C.hairline}`
     }
+  }), extraIncomeReceiptImage ? React.createElement("div", {
+    className: "flex items-center gap-2.5 rounded-lg p-2",
+    style: {
+      background: C.bgSoft,
+      border: `1px solid ${C.hairline}`
+    }
+  }, React.createElement("img", {
+    src: extraIncomeReceiptImage,
+    alt: "รูปที่แนบ",
+    onClick: () => setViewingReceipt(extraIncomeReceiptImage),
+    className: "h-14 w-14 shrink-0 rounded-md object-cover",
+    style: {
+      cursor: "pointer"
+    }
+  }), React.createElement("span", {
+    className: "flex-1 text-[11px]",
+    style: {
+      color: C.textMuted
+    }
+  }, "แนบรูปแล้ว — แตะรูปเพื่อดูขนาดเต็ม"), React.createElement("button", {
+    onClick: () => setExtraIncomeReceiptImage(null),
+    className: "p-1",
+    "aria-label": "ลบรูป",
+    type: "button"
+  }, React.createElement(Icon, {
+    name: "trash",
+    size: 14,
+    color: C.textFaint
+  }))) : React.createElement("button", {
+    onClick: () => extraIncomeReceiptInputRef.current?.click(),
+    className: "flex items-center justify-center gap-1.5 rounded-lg py-2.5 text-xs font-medium",
+    style: {
+      background: C.bgSoft,
+      color: C.textMuted,
+      border: `1px dashed ${C.hairlineStrong}`
+    },
+    type: "button"
+  }, React.createElement(Icon, {
+    name: "upload",
+    size: 13
+  }), " แนบรูปสลิป/หลักฐาน (ไม่บังคับ)"), React.createElement("input", {
+    ref: extraIncomeReceiptInputRef,
+    type: "file",
+    accept: "image/*",
+    className: "hidden",
+    onChange: e => handleExtraIncomeReceiptFile(e.target.files?.[0])
   }), React.createElement("button", {
     onClick: addExtraIncome,
     className: "rounded-lg py-2.5 text-sm font-semibold",
@@ -6993,7 +7052,15 @@ function GrabProfitMeter() {
     }
   }, thaiDate(r.date), r.note ? ` · ${r.note}` : "")), React.createElement("div", {
     className: "flex items-center gap-2"
-  }, React.createElement("span", {
+  }, r.receiptImage && React.createElement("img", {
+    src: r.receiptImage,
+    alt: "รูปที่แนบ",
+    onClick: () => setViewingReceipt(r.receiptImage),
+    className: "h-9 w-9 shrink-0 rounded-md object-cover",
+    style: {
+      cursor: "pointer"
+    }
+  }), React.createElement("span", {
     className: "text-xs font-semibold",
     style: {
       color: C.greenDeep,
