@@ -691,32 +691,42 @@ const shiftMonth = (ym, dir) => {
   d.setMonth(d.getMonth() + dir);
   return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}`;
 };
-const buildMaintenanceCostByDate = (workDates, maintenanceRecords) => {
+const buildMaintenanceCostByDate = (entries, maintenanceRecords) => {
   const result = {
     byDate: {},
     currentSegmentRate: 0
   };
-  if (!maintenanceRecords || maintenanceRecords.length === 0) return result;
-  const sortedWorkDates = [...new Set(workDates)].sort();
-  const recordsByType = {};
-  maintenanceRecords.forEach(r => {
-    const type = r.type || "อื่นๆ";
-    if (!recordsByType[type]) recordsByType[type] = {};
-    recordsByType[type][r.date] = (recordsByType[type][r.date] || 0) + (r.cost || 0);
+  const cashRecords = (maintenanceRecords || []).filter(r => r.paymentMethod !== "credit");
+  if (cashRecords.length === 0) return result;
+  const recordsByVehicle = {};
+  cashRecords.forEach(r => {
+    const vid = r.vehicleId || "default";
+    if (!recordsByVehicle[vid]) recordsByVehicle[vid] = [];
+    recordsByVehicle[vid].push(r);
   });
-  Object.values(recordsByType).forEach(byDateCost => {
-    const recordDates = Object.keys(byDateCost).sort();
-    for (let i = 0; i < recordDates.length; i++) {
-      const segStart = recordDates[i];
-      const segEnd = i + 1 < recordDates.length ? recordDates[i + 1] : null;
-      const segCost = byDateCost[segStart];
-      const segWorkDays = sortedWorkDates.filter(d => d >= segStart && (segEnd === null || d < segEnd));
-      const perDay = segWorkDays.length > 0 ? Math.round(segCost / segWorkDays.length * 100) / 100 : 0;
-      segWorkDays.forEach(d => {
-        result.byDate[d] = Math.round(((result.byDate[d] || 0) + perDay) * 100) / 100;
-      });
-      if (segEnd === null) result.currentSegmentRate = Math.round((result.currentSegmentRate + perDay) * 100) / 100;
-    }
+  Object.keys(recordsByVehicle).forEach(vid => {
+    const vehicleWorkDates = [...new Set(entries.filter(e => (e.income || 0) > 0 && (e.vehicleId || "default") === vid).map(e => e.date))].sort();
+    const vehicleRecords = recordsByVehicle[vid];
+    const recordsByType = {};
+    vehicleRecords.forEach(r => {
+      const type = r.type || "อื่นๆ";
+      if (!recordsByType[type]) recordsByType[type] = {};
+      recordsByType[type][r.date] = (recordsByType[type][r.date] || 0) + (r.cost || 0);
+    });
+    Object.values(recordsByType).forEach(byDateCost => {
+      const recordDates = Object.keys(byDateCost).sort();
+      for (let i = 0; i < recordDates.length; i++) {
+        const segStart = recordDates[i];
+        const segEnd = i + 1 < recordDates.length ? recordDates[i + 1] : null;
+        const segCost = byDateCost[segStart];
+        const segWorkDays = vehicleWorkDates.filter(d => d >= segStart && (segEnd === null || d < segEnd));
+        const perDay = segWorkDays.length > 0 ? Math.round(segCost / segWorkDays.length * 100) / 100 : 0;
+        segWorkDays.forEach(d => {
+          result.byDate[d] = Math.round(((result.byDate[d] || 0) + perDay) * 100) / 100;
+        });
+        if (segEnd === null) result.currentSegmentRate = Math.round((result.currentSegmentRate + perDay) * 100) / 100;
+      }
+    });
   });
   return result;
 };
@@ -1640,6 +1650,12 @@ function GrabProfitMeter() {
   const [maintNote, setMaintNote] = useState("");
   const [maintCost, setMaintCost] = useState(0);
   const [maintWalletId, setMaintWalletId] = useState("");
+  const [maintVehicleId, setMaintVehicleId] = useState("");
+  const [maintPaymentMethod, setMaintPaymentMethod] = useState("cash");
+  const [maintInstMonths, setMaintInstMonths] = useState(1);
+  const [maintInstStartMonth, setMaintInstStartMonth] = useState(todayISO().slice(0, 7));
+  const [maintInstWalletId, setMaintInstWalletId] = useState("");
+  const [maintFilterVehicleId, setMaintFilterVehicleId] = useState("all");
   const [showMaintForm, setShowMaintForm] = useState(false);
   const [heatmapMonth, setHeatmapMonth] = useState(todayISO().slice(0, 7));
   const [showTurboSettings, setShowTurboSettings] = useState(false);
@@ -1836,7 +1852,7 @@ function GrabProfitMeter() {
     setEntries(prevEntries => {
       let changed = false;
       const workDates = prevEntries.filter(e => (e.income || 0) > 0).map(e => e.date);
-      const segments = buildMaintenanceCostByDate(workDates, maintenanceRecords);
+      const segments = buildMaintenanceCostByDate(prevEntries, maintenanceRecords);
       const updated = prevEntries.map(e => {
         const newCost = e.income > 0 ? segments.byDate[e.date] || 0 : 0;
         const oldCost = e.maintenanceCost || 0;
@@ -2338,23 +2354,24 @@ function GrabProfitMeter() {
     setShowWeeklyTurboField(weekdayIndexMonFirst(date) === 0);
   }, [date, loaded]);
   const maintenanceSummary = useMemo(() => {
-    const total = maintenanceRecords.reduce((a, r) => a + (r.cost || 0), 0);
-    const totalKm = entries.reduce((a, e) => a + (e.distanceKm || 0), 0);
-    const workDates = entries.filter(e => (e.income || 0) > 0).map(e => e.date);
-    const segments = buildMaintenanceCostByDate(workDates, maintenanceRecords);
+    const filteredRecords = maintFilterVehicleId === "all" ? maintenanceRecords : maintenanceRecords.filter(r => (r.vehicleId || "default") === maintFilterVehicleId);
+    const total = filteredRecords.reduce((a, r) => a + (r.cost || 0), 0);
+    const filteredEntries = maintFilterVehicleId === "all" ? entries : entries.filter(e => (e.vehicleId || "default") === maintFilterVehicleId);
+    const totalKm = filteredEntries.reduce((a, e) => a + (e.distanceKm || 0), 0);
+    const segments = buildMaintenanceCostByDate(entries, filteredRecords);
     const byType = {};
-    maintenanceRecords.forEach(r => {
+    filteredRecords.forEach(r => {
       byType[r.type] = (byType[r.type] || 0) + (r.cost || 0);
     });
     return {
       total,
-      count: maintenanceRecords.length,
+      count: filteredRecords.length,
       perDay: segments.currentSegmentRate,
       perKm: totalKm > 0 ? total / totalKm : 0,
       byType,
       hasKmData: totalKm > 0
     };
-  }, [maintenanceRecords, entries]);
+  }, [maintenanceRecords, entries, maintFilterVehicleId]);
   const commissionCost = 0;
   const insuranceCost = income > 0 ? insuranceCostPerDay || 0 : 0;
   const INCENTIVE_TAX_RATE = 0.03;
@@ -2437,13 +2454,38 @@ function GrabProfitMeter() {
   const addMaintenance = async () => {
     setSaveError("");
     if (!maintCost || maintCost <= 0) return;
+    const vId = maintVehicleId || activeVehicleId;
+    const isCredit = maintPaymentMethod === "credit";
+    let linkedFixedExpenseId;
+    if (isCredit) {
+      const months = maintInstMonths > 0 ? maintInstMonths : 1;
+      const monthlyAmount = Math.round(maintCost / months * 100) / 100;
+      const endMonth = addMonthsToYm(maintInstStartMonth, months - 1);
+      linkedFixedExpenseId = `inst-${Date.now()}`;
+      const vName = vehicles.find(v => v.id === vId)?.name || "";
+      const item = {
+        id: linkedFixedExpenseId,
+        name: `🔧 ซ่อมบำรุง${vName ? ` (${vName})` : ""}: ${maintType}${maintNote ? " - " + maintNote : ""}`,
+        amount: monthlyAmount,
+        walletId: maintInstWalletId || undefined,
+        installmentTotalAmount: maintCost,
+        installmentTotalMonths: months,
+        installmentStartMonth: maintInstStartMonth,
+        installmentEndMonth: endMonth,
+        linkedMaintenanceId: `${maintDate}-${Date.now()}`
+      };
+      setFixedExpenses(prev => [...prev, item]);
+    }
     const record = {
       id: `${maintDate}-${Date.now()}`,
       date: maintDate,
       type: maintType,
       note: maintNote,
       cost: maintCost,
-      walletId: maintWalletId || undefined
+      vehicleId: vId,
+      paymentMethod: maintPaymentMethod,
+      walletId: !isCredit ? maintWalletId || undefined : undefined,
+      linkedFixedExpenseId
     };
     const latest = await readLatestArray("maintenance-records", maintenanceRecords);
     const next = [record, ...latest].sort((a, b) => b.date.localeCompare(a.date));
@@ -2453,9 +2495,13 @@ function GrabProfitMeter() {
     } catch (e) {
       reportSaveError(e);
     }
-    if (maintWalletId && maintWalletId !== "central") await adjustWalletBalance(maintWalletId, -maintCost);
+    if (!isCredit && maintWalletId && maintWalletId !== "central") await adjustWalletBalance(maintWalletId, -maintCost);
     setMaintCost(0);
     setMaintNote("");
+    setMaintPaymentMethod("cash");
+    setMaintInstMonths(1);
+    setMaintInstStartMonth(todayISO().slice(0, 7));
+    setMaintInstWalletId("");
   };
   const deleteMaintenance = async id => {
     setSaveError("");
@@ -2469,6 +2515,9 @@ function GrabProfitMeter() {
       reportSaveError(e);
     }
     if (removed && removed.walletId && removed.walletId !== "central") await adjustWalletBalance(removed.walletId, removed.cost || 0);
+    if (removed && removed.linkedFixedExpenseId) {
+      setFixedExpenses(prev => prev.filter(e => e.id !== removed.linkedFixedExpenseId));
+    }
   };
   const compressReceiptImage = (file, maxWidth = 480, quality = 0.55) => {
     return new Promise((resolve, reject) => {
@@ -3041,8 +3090,10 @@ function GrabProfitMeter() {
     }
     const maintRows = [...maintenanceRecords].sort((a, b) => a.date.localeCompare(b.date)).map(r => ({
       วันที่: r.date,
+      รถ: vehicles.find(v => v.id === (r.vehicleId || "default"))?.name || "รถของฉัน",
       ประเภท: r.type,
       ค่าใช้จ่าย: r.cost || 0,
+      ชำระด้วย: r.paymentMethod === "credit" ? "บัตรเครดิต (ผ่อน)" : "เงินสด",
       โน้ต: r.note || ""
     }));
     window.XLSX.utils.book_append_sheet(wb, window.XLSX.utils.json_to_sheet(maintRows), "ค่าซ่อมบำรุง");
@@ -5908,13 +5959,52 @@ function GrabProfitMeter() {
   }, MAINTENANCE_TYPES.map(t => React.createElement("option", {
     key: t,
     value: t
-  }, t))))), React.createElement(Field, {
+  }, t))))), vehicles.length > 1 && React.createElement("div", null, React.createElement("span", {
+    className: "mb-1.5 block text-xs",
+    style: {
+      color: C.textMuted
+    }
+  }, "รถคันไหน"), React.createElement("div", {
+    className: "flex flex-wrap gap-1.5"
+  }, vehicles.map(v => React.createElement("button", {
+    key: v.id,
+    type: "button",
+    onClick: () => setMaintVehicleId(v.id),
+    className: "rounded-full px-3 py-1.5 text-[11px] font-medium",
+    style: {
+      background: (maintVehicleId || activeVehicleId) === v.id ? C.blue : C.bgSoft,
+      color: (maintVehicleId || activeVehicleId) === v.id ? "#FFFFFF" : C.textFaint
+    }
+  }, v.type === "ev" ? "🔋 " : "🚗 ", v.name)))), React.createElement(Field, {
     label: "ค่าใช้จ่าย",
     suffix: "บาท",
     value: maintCost,
     onChange: setMaintCost,
     placeholder: "0"
   }), React.createElement("div", null, React.createElement("span", {
+    className: "mb-1.5 block text-xs",
+    style: {
+      color: C.textMuted
+    }
+  }, "จ่ายด้วย"), React.createElement("div", {
+    className: "flex gap-1.5"
+  }, React.createElement("button", {
+    type: "button",
+    onClick: () => setMaintPaymentMethod("cash"),
+    className: "flex-1 rounded-lg py-2 text-xs font-medium",
+    style: {
+      background: maintPaymentMethod === "cash" ? C.greenDeep : C.bgSoft,
+      color: maintPaymentMethod === "cash" ? "#FFFFFF" : C.textFaint
+    }
+  }, "💵 เงินสด"), React.createElement("button", {
+    type: "button",
+    onClick: () => setMaintPaymentMethod("credit"),
+    className: "flex-1 rounded-lg py-2 text-xs font-medium",
+    style: {
+      background: maintPaymentMethod === "credit" ? C.blue : C.bgSoft,
+      color: maintPaymentMethod === "credit" ? "#FFFFFF" : C.textFaint
+    }
+  }, "💳 บัตรเครดิต"))), maintPaymentMethod === "cash" ? React.createElement("div", null, React.createElement("span", {
     className: "mb-1.5 block text-xs",
     style: {
       color: C.textMuted
@@ -5946,7 +6036,76 @@ function GrabProfitMeter() {
       background: maintWalletId === w.id ? C.blue : C.bgSoft,
       color: maintWalletId === w.id ? "#FFFFFF" : C.textFaint
     }
-  }, "👛 ", w.name, " (", thb(w.balance), "฿)")))), React.createElement("input", {
+  }, "👛 ", w.name, " (", thb(w.balance), "฿)")))) : React.createElement("div", {
+    className: "flex flex-col gap-2 rounded-lg p-3",
+    style: {
+      background: C.panel,
+      border: `1px solid ${C.hairline}`
+    }
+  }, React.createElement("p", {
+    className: "text-[11px]",
+    style: {
+      color: C.textFaint
+    }
+  }, "รายการนี้จะไปโผล่เป็นรายจ่ายคงที่ (ผ่อนบัตรเครดิต) แทนการหักตอนนี้"), React.createElement("div", {
+    className: "flex gap-2"
+  }, React.createElement(Field, {
+    label: "ผ่อนกี่เดือน",
+    suffix: "เดือน",
+    value: maintInstMonths,
+    onChange: setMaintInstMonths,
+    placeholder: "1",
+    step: "1"
+  }), React.createElement("label", {
+    className: "flex flex-1 flex-col gap-1.5"
+  }, React.createElement("span", {
+    className: "text-xs",
+    style: {
+      color: C.textMuted
+    }
+  }, "เริ่มผ่อนเดือนไหน"), React.createElement("input", {
+    type: "month",
+    value: maintInstStartMonth,
+    onChange: e => setMaintInstStartMonth(e.target.value),
+    className: "rounded-lg px-3 py-2 text-sm",
+    style: {
+      background: C.bgSoft,
+      color: C.text,
+      border: `1px solid ${C.hairline}`,
+      fontFamily: "'JetBrains Mono', monospace"
+    }
+  }))), maintCost > 0 && maintInstMonths > 0 && React.createElement("p", {
+    className: "text-[11px]",
+    style: {
+      color: C.textFaint
+    }
+  }, "เดือนละ ", thb(Math.round(maintCost / maintInstMonths * 100) / 100), " บาท"), wallets.length > 0 && React.createElement("div", null, React.createElement("span", {
+    className: "mb-1.5 block text-xs",
+    style: {
+      color: C.textMuted
+    }
+  }, "พอติ๊กจ่ายแล้วแต่ละเดือน"), React.createElement("div", {
+    className: "flex flex-wrap gap-1.5"
+  }, React.createElement("button", {
+    type: "button",
+    onClick: () => setMaintInstWalletId(""),
+    className: "rounded-full px-2.5 py-1 text-[10px] font-medium",
+    style: {
+      background: !maintInstWalletId ? C.greenDeep : C.bgSoft,
+      color: !maintInstWalletId ? "#FFFFFF" : C.textFaint,
+      border: `1px solid ${C.hairline}`
+    }
+  }, "ตัดใช้เลย"), wallets.map(w => React.createElement("button", {
+    key: w.id,
+    type: "button",
+    onClick: () => setMaintInstWalletId(w.id),
+    className: "rounded-full px-2.5 py-1 text-[10px] font-medium",
+    style: {
+      background: maintInstWalletId === w.id ? C.blue : C.bgSoft,
+      color: maintInstWalletId === w.id ? "#FFFFFF" : C.textFaint,
+      border: `1px solid ${C.hairline}`
+    }
+  }, "👛 พักไว้ที่ ", w.name))))), React.createElement("input", {
     type: "text",
     value: maintNote,
     onChange: e => setMaintNote(e.target.value),
@@ -5959,15 +6118,34 @@ function GrabProfitMeter() {
     }
   }), React.createElement("button", {
     onClick: addMaintenance,
-    disabled: !maintCost || maintCost <= 0,
+    disabled: !maintCost || maintCost <= 0 || maintPaymentMethod === "credit" && (!maintInstMonths || maintInstMonths <= 0),
     className: "rounded-lg py-2 text-xs font-semibold",
     style: {
       background: C.green,
       color: "#FFFFFF",
-      opacity: !maintCost || maintCost <= 0 ? 0.5 : 1
+      opacity: !maintCost || maintCost <= 0 || maintPaymentMethod === "credit" && (!maintInstMonths || maintInstMonths <= 0) ? 0.5 : 1
     },
     type: "button"
-  }, "บันทึกรายการซ่อมบำรุง")), maintenanceSummary.count > 0 ? React.createElement(React.Fragment, null, React.createElement("div", {
+  }, "บันทึกรายการซ่อมบำรุง")), vehicles.length > 1 && maintenanceRecords.length > 0 && React.createElement("div", {
+    className: "mb-3 flex flex-wrap gap-1.5"
+  }, React.createElement("button", {
+    type: "button",
+    onClick: () => setMaintFilterVehicleId("all"),
+    className: "rounded-full px-3 py-1 text-[11px] font-medium",
+    style: {
+      background: maintFilterVehicleId === "all" ? C.textMuted : C.bgSoft,
+      color: maintFilterVehicleId === "all" ? "#FFFFFF" : C.textFaint
+    }
+  }, "ทั้งหมด"), vehicles.map(v => React.createElement("button", {
+    key: v.id,
+    type: "button",
+    onClick: () => setMaintFilterVehicleId(v.id),
+    className: "rounded-full px-3 py-1 text-[11px] font-medium",
+    style: {
+      background: maintFilterVehicleId === v.id ? C.blue : C.bgSoft,
+      color: maintFilterVehicleId === v.id ? "#FFFFFF" : C.textFaint
+    }
+  }, v.type === "ev" ? "🔋 " : "🚗 ", v.name))), maintenanceSummary.count > 0 ? React.createElement(React.Fragment, null, React.createElement("div", {
     className: "mb-3 grid grid-cols-3 gap-2 text-center"
   }, React.createElement("div", {
     className: "rounded-lg py-2",
@@ -6019,7 +6197,7 @@ function GrabProfitMeter() {
     }
   }, maintenanceSummary.hasKmData ? thb(maintenanceSummary.perKm) : "—"))), React.createElement("div", {
     className: "flex flex-col gap-1.5"
-  }, maintenanceRecords.map(r => React.createElement("div", {
+  }, maintenanceRecords.filter(r => maintFilterVehicleId === "all" || (r.vehicleId || "default") === maintFilterVehicleId).map(r => React.createElement("div", {
     key: r.id,
     className: "row-in flex items-center justify-between rounded-lg px-3 py-2",
     style: {
@@ -6030,7 +6208,18 @@ function GrabProfitMeter() {
     style: {
       color: C.text
     }
-  }, r.type, " · ", thaiDate(r.date)), r.note && React.createElement("div", {
+  }, r.type, " · ", thaiDate(r.date), r.paymentMethod === "credit" && React.createElement("span", {
+    className: "ml-1.5 rounded px-1.5 py-0.5 text-[10px] font-medium",
+    style: {
+      background: C.blue,
+      color: "#FFFFFF"
+    }
+  }, "💳 ผ่อน"), vehicles.length > 1 && React.createElement("span", {
+    className: "ml-1.5 text-[11px]",
+    style: {
+      color: C.textFaint
+    }
+  }, "· ", vehicles.find(v => v.id === (r.vehicleId || "default"))?.name || "")), r.note && React.createElement("div", {
     className: "text-[12px]",
     style: {
       color: C.textFaint
