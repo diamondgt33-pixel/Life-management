@@ -1597,6 +1597,12 @@ function GrabProfitMeter() {
   const [newWalletName, setNewWalletName] = useState("");
   const [dailyExpWalletId, setDailyExpWalletId] = useState("");
   const [showTransferModal, setShowTransferModal] = useState(false);
+  const [showWalletMoveModal, setShowWalletMoveModal] = useState(false);
+  const [walletMoveFromId, setWalletMoveFromId] = useState("");
+  const [walletMoveToId, setWalletMoveToId] = useState("");
+  const [walletMoveAmount, setWalletMoveAmount] = useState(0);
+  const [walletMoveNote, setWalletMoveNote] = useState("");
+  const [walletMoveLogs, setWalletMoveLogs] = useState([]);
   const [showRetagModal, setShowRetagModal] = useState(false);
   const [retagMonth, setRetagMonth] = useState(todayISO().slice(0, 7));
   const [retagWalletId, setRetagWalletId] = useState("");
@@ -1717,6 +1723,10 @@ function GrabProfitMeter() {
       try {
         const wt = await window.storage.get("wallet-transfers", false);
         if (wt && wt.value) setWalletTransfers(JSON.parse(wt.value));
+      } catch (e) {}
+      try {
+        const wm = await window.storage.get("wallet-move-logs", false);
+        if (wm && wm.value) setWalletMoveLogs(JSON.parse(wm.value));
       } catch (e) {}
       try {
         const wpa = await window.storage.get("wallet-pool-adjustment", false);
@@ -2825,6 +2835,51 @@ function GrabProfitMeter() {
     }
     setTransferAmounts({});
     setShowTransferModal(false);
+  };
+  const transferBetweenWallets = async () => {
+    setSaveError("");
+    if (!walletMoveFromId || !walletMoveToId || walletMoveFromId === walletMoveToId) return;
+    if (!walletMoveAmount || walletMoveAmount <= 0) return;
+    const latestWallets = await readLatestArray("wallets", wallets);
+    const nextWallets = latestWallets.map(w => {
+      if (w.id === walletMoveFromId) return {
+        ...w,
+        balance: Math.round((w.balance - walletMoveAmount) * 100) / 100
+      };
+      if (w.id === walletMoveToId) return {
+        ...w,
+        balance: Math.round((w.balance + walletMoveAmount) * 100) / 100
+      };
+      return w;
+    });
+    setWallets(nextWallets);
+    try {
+      await window.storage.set("wallets", JSON.stringify(nextWallets), false);
+    } catch (e) {
+      reportSaveError(e);
+      return;
+    }
+    const logEntry = {
+      id: `wm-${Date.now()}`,
+      date: todayISO(),
+      fromWalletId: walletMoveFromId,
+      toWalletId: walletMoveToId,
+      amount: walletMoveAmount,
+      note: walletMoveNote
+    };
+    const latestLogs = await readLatestArray("wallet-move-logs", walletMoveLogs);
+    const nextLogs = [logEntry, ...latestLogs];
+    setWalletMoveLogs(nextLogs);
+    try {
+      await window.storage.set("wallet-move-logs", JSON.stringify(nextLogs), false);
+    } catch (e) {
+      reportSaveError(e);
+    }
+    setWalletMoveFromId("");
+    setWalletMoveToId("");
+    setWalletMoveAmount(0);
+    setWalletMoveNote("");
+    setShowWalletMoveModal(false);
   };
   const retagExpensesToWallet = async () => {
     if (!retagWalletId) return;
@@ -7772,7 +7827,15 @@ function GrabProfitMeter() {
       color: C.greenDeep
     },
     type: "button"
-  }, "💰 โอนเงินเข้ากระเป๋า"), wallets.length > 0 && React.createElement("button", {
+  }, "💰 โอนเงินเข้ากระเป๋า"), wallets.length > 1 && React.createElement("button", {
+    onClick: () => setShowWalletMoveModal(true),
+    className: "mt-2 w-full rounded-lg py-2 text-xs font-semibold",
+    style: {
+      background: C.bgSoft,
+      color: C.blue
+    },
+    type: "button"
+  }, "🔁 โอนเงินระหว่างกระเป๋า"), wallets.length > 0 && React.createElement("button", {
     onClick: () => setShowRetagModal(true),
     className: "mt-2 w-full rounded-lg py-2 text-xs font-semibold",
     style: {
@@ -9758,7 +9821,105 @@ function GrabProfitMeter() {
       },
       type: "button"
     }, overAllocated ? "ยืนยันการโอน (เกินยอดที่มี)" : "ยืนยันการโอน"));
-  })())), showMonthlyReport && monthlyReportData && React.createElement("div", {
+  })())), showWalletMoveModal && React.createElement("div", {
+    className: "fixed inset-0 z-50 flex items-center justify-center p-5",
+    style: {
+      background: "rgba(0,0,0,0.55)"
+    },
+    onClick: () => setShowWalletMoveModal(false)
+  }, React.createElement("div", {
+    className: "w-full max-w-sm rounded-2xl p-4",
+    style: {
+      background: C.panel,
+      maxHeight: "85vh",
+      overflowY: "auto"
+    },
+    onClick: e => e.stopPropagation()
+  }, React.createElement("div", {
+    className: "mb-3 flex items-center justify-between"
+  }, React.createElement("span", {
+    className: "text-sm font-semibold",
+    style: {
+      color: C.text
+    }
+  }, "🔁 โอนเงินระหว่างกระเป๋า"), React.createElement("button", {
+    onClick: () => setShowWalletMoveModal(false),
+    className: "p-1",
+    "aria-label": "ปิด",
+    type: "button"
+  }, React.createElement("span", {
+    style: {
+      fontSize: 16,
+      color: C.textFaint
+    }
+  }, "✕"))), React.createElement("div", {
+    className: "flex flex-col gap-2.5"
+  }, React.createElement("div", null, React.createElement("span", {
+    className: "mb-1.5 block text-xs",
+    style: {
+      color: C.textMuted
+    }
+  }, "โอนจาก"), React.createElement("div", {
+    className: "flex flex-wrap gap-1.5"
+  }, wallets.map(w => React.createElement("button", {
+    key: w.id,
+    type: "button",
+    onClick: () => setWalletMoveFromId(w.id),
+    className: "rounded-full px-3 py-1.5 text-[11px] font-medium",
+    style: {
+      background: walletMoveFromId === w.id ? C.red : C.bgSoft,
+      color: walletMoveFromId === w.id ? "#FFFFFF" : C.textFaint
+    }
+  }, "👛 ", w.name, " (", thb(w.balance), "฿)")))), React.createElement("div", null, React.createElement("span", {
+    className: "mb-1.5 block text-xs",
+    style: {
+      color: C.textMuted
+    }
+  }, "โอนไป"), React.createElement("div", {
+    className: "flex flex-wrap gap-1.5"
+  }, wallets.filter(w => w.id !== walletMoveFromId).map(w => React.createElement("button", {
+    key: w.id,
+    type: "button",
+    onClick: () => setWalletMoveToId(w.id),
+    className: "rounded-full px-3 py-1.5 text-[11px] font-medium",
+    style: {
+      background: walletMoveToId === w.id ? C.green : C.bgSoft,
+      color: walletMoveToId === w.id ? "#FFFFFF" : C.textFaint
+    }
+  }, "👛 ", w.name, " (", thb(w.balance), "฿)")))), React.createElement(Field, {
+    label: "จำนวนเงิน",
+    suffix: "บาท",
+    value: walletMoveAmount,
+    onChange: setWalletMoveAmount,
+    placeholder: "0"
+  }), React.createElement("input", {
+    type: "text",
+    value: walletMoveNote,
+    onChange: e => setWalletMoveNote(e.target.value),
+    placeholder: "หมายเหตุ (ไม่บังคับ)",
+    className: "rounded-lg px-3 py-2 text-xs outline-none",
+    style: {
+      background: C.bgSoft,
+      color: C.text,
+      border: `1px solid ${C.hairline}`
+    }
+  }), walletMoveFromId && walletMoveAmount > (wallets.find(w => w.id === walletMoveFromId)?.balance || 0) && React.createElement("p", {
+    className: "rounded-lg p-2.5 text-[11px] leading-relaxed",
+    style: {
+      background: C.redDim,
+      color: C.red
+    }
+  }, "⚠️ ยอดที่โอนมากกว่าเงินในกระเป๋าต้นทาง ยอดจะติดลบ"), React.createElement("button", {
+    onClick: transferBetweenWallets,
+    disabled: !walletMoveFromId || !walletMoveToId || walletMoveFromId === walletMoveToId || !walletMoveAmount || walletMoveAmount <= 0,
+    className: "mt-1 w-full rounded-lg py-2.5 text-sm font-semibold",
+    style: {
+      background: C.green,
+      color: "#FFFFFF",
+      opacity: !walletMoveFromId || !walletMoveToId || walletMoveFromId === walletMoveToId || !walletMoveAmount || walletMoveAmount <= 0 ? 0.5 : 1
+    },
+    type: "button"
+  }, "ยืนยันการโอน")))), showMonthlyReport && monthlyReportData && React.createElement("div", {
     className: "fixed inset-0 z-50 flex items-center justify-center p-5",
     style: {
       background: "rgba(0,0,0,0.55)"
