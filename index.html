@@ -1617,6 +1617,7 @@ function GrabProfitMeter() {
   const [reconcileCashAmount, setReconcileCashAmount] = useState(0);
   const [showReconcileConfirm, setShowReconcileConfirm] = useState(false);
   const [showResetPoolConfirm, setShowResetPoolConfirm] = useState(false);
+  const [showResetToMonthConfirm, setShowResetToMonthConfirm] = useState(false);
   const [showExtraIncomeForm, setShowExtraIncomeForm] = useState(false);
   const [extraIncomeDate, setExtraIncomeDate] = useState(todayISO());
   const [extraIncomeAmount, setExtraIncomeAmount] = useState(0);
@@ -2917,6 +2918,17 @@ function GrabProfitMeter() {
   const resetUnallocatedToZero = async () => {
     setSaveError("");
     const newAdjustment = Math.round(walletPool.rawUnallocated * 100) / 100;
+    setWalletPoolAdjustment(newAdjustment);
+    try {
+      await window.storage.set("wallet-pool-adjustment", JSON.stringify(newAdjustment), false);
+    } catch (e) {
+      reportSaveError(e);
+    }
+  };
+  const resetUnallocatedToThisMonth = async () => {
+    setSaveError("");
+    const target = Math.round((walletPool.unallocated - walletPool.oldMoneyBeforeThisMonth) * 100) / 100;
+    const newAdjustment = Math.round((walletPool.rawUnallocated - target) * 100) / 100;
     setWalletPoolAdjustment(newAdjustment);
     try {
       await window.storage.set("wallet-pool-adjustment", JSON.stringify(newAdjustment), false);
@@ -7921,7 +7933,46 @@ function GrabProfitMeter() {
       color: "#FFFFFF"
     },
     type: "button"
-  }, "ยืนยันเริ่มนับใหม่")))), walletPoolAdjustment !== 0 && React.createElement("div", {
+  }, "ยืนยันเริ่มนับใหม่")))), walletPool.unallocated !== 0 && React.createElement(React.Fragment, null, !showResetToMonthConfirm ? React.createElement("button", {
+    onClick: () => setShowResetToMonthConfirm(true),
+    className: "mt-2 w-full rounded-lg py-2 text-xs font-semibold",
+    style: {
+      background: C.bgSoft,
+      color: C.textFaint
+    },
+    type: "button"
+  }, "🧹 เคลียร์เดือนก่อนๆ ออก เหลือแค่กำไรเดือนนี้") : React.createElement("div", {
+    className: "mt-2 rounded-lg p-3",
+    style: {
+      background: C.redDim
+    }
+  }, React.createElement("p", {
+    className: "mb-2 text-[11px] leading-relaxed",
+    style: {
+      color: C.red
+    }
+  }, "ตัดเศษเงินที่สะสมมาจาก\"ก่อนเดือนนี้\"ทิ้งไป เหลือให้ยอด \"ยังไม่ได้จัดสรร\" = เฉพาะกำไร+รายได้พิเศษของเดือนนี้ที่ยังไม่ได้จ่ายออกไปเท่านั้น (ตอนนี้จะเหลือ ", thb(Math.round((walletPool.unallocated - walletPool.oldMoneyBeforeThisMonth) * 100) / 100), " บาท) — ไม่กระทบยอดกำไร/รายจ่ายที่บันทึกไว้เลย แค่ตัดฐานเก่าออกจากตัวนับ"), React.createElement("div", {
+    className: "flex gap-2"
+  }, React.createElement("button", {
+    onClick: () => setShowResetToMonthConfirm(false),
+    className: "flex-1 rounded-lg py-2 text-xs font-medium",
+    style: {
+      background: C.panel,
+      color: C.textMuted
+    },
+    type: "button"
+  }, "ยกเลิก"), React.createElement("button", {
+    onClick: () => {
+      resetUnallocatedToThisMonth();
+      setShowResetToMonthConfirm(false);
+    },
+    className: "flex-1 rounded-lg py-2 text-xs font-semibold",
+    style: {
+      background: C.red,
+      color: "#FFFFFF"
+    },
+    type: "button"
+  }, "ยืนยันเคลียร์เดือนก่อนๆ")))), walletPoolAdjustment !== 0 && React.createElement("div", {
     className: "mt-2 rounded-lg p-3",
     style: {
       background: C.bgSoft
