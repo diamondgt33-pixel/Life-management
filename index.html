@@ -2927,7 +2927,7 @@ function GrabProfitMeter() {
   };
   const resetUnallocatedToThisMonth = async () => {
     setSaveError("");
-    const target = Math.round((walletPool.unallocated - walletPool.oldMoneyBeforeThisMonth) * 100) / 100;
+    const target = Math.round((walletPool.unallocated - walletPool.oldMoneyBeforeThisMonth + walletPool.thisMonthSpent) * 100) / 100;
     const newAdjustment = Math.round((walletPool.rawUnallocated - target) * 100) / 100;
     setWalletPoolAdjustment(newAdjustment);
     try {
@@ -7951,7 +7951,7 @@ function GrabProfitMeter() {
     style: {
       color: C.red
     }
-  }, "ตัดเศษเงินที่สะสมมาจาก\"ก่อนเดือนนี้\"ทิ้งไป เหลือให้ยอด \"ยังไม่ได้จัดสรร\" = เฉพาะกำไร+รายได้พิเศษของเดือนนี้ที่ยังไม่ได้จ่ายออกไปเท่านั้น (ตอนนี้จะเหลือ ", thb(Math.round((walletPool.unallocated - walletPool.oldMoneyBeforeThisMonth) * 100) / 100), " บาท) — ไม่กระทบยอดกำไร/รายจ่ายที่บันทึกไว้เลย แค่ตัดฐานเก่าออกจากตัวนับ"), React.createElement("div", {
+  }, "ตั้งยอด \"ยังไม่ได้จัดสรร\" ให้เท่ากับกำไร+รายได้พิเศษของเดือนนี้แบบเต็มๆ (จะเป็น ", thb(Math.round((walletPool.unallocated - walletPool.oldMoneyBeforeThisMonth + walletPool.thisMonthSpent) * 100) / 100), " บาท) โดยรายจ่ายที่จ่ายไปแล้วเดือนนี้จะถือว่าจ่ายจากเงินเก่าต่างหาก ไม่ไปหักกำไรเดือนนี้ — กำไรเดือนนี้ที่เหลือทั้งก้อนจะกลายเป็นเงินสำรองให้เดือนหน้าใช้จ่ายต่อโดยอัตโนมัติ แล้วเดือนต่อๆ ไปก็จะเป็นแบบนี้ไปเรื่อยๆ เอง ไม่ต้องมากดปุ่มนี้ซ้ำทุกเดือน — ไม่กระทบยอดกำไร/รายจ่ายที่บันทึกไว้จริงเลย"), React.createElement("div", {
     className: "flex gap-2"
   }, React.createElement("button", {
     onClick: () => setShowResetToMonthConfirm(false),
