@@ -1547,6 +1547,7 @@ function GrabProfitMeter() {
   const [insuranceCostPerDay, setInsuranceCostPerDay] = useState(28.89);
   const [touOnPeakRate, setTouOnPeakRate] = useState(5.7982);
   const [touOffPeakRate, setTouOffPeakRate] = useState(2.6369);
+  const [normalHomeRate, setNormalHomeRate] = useState(4.4);
   const [otherCost, setOtherCost] = useState(0);
   const [otherLabel, setOtherLabel] = useState("");
   const [chartGranularity, setChartGranularity] = useState("daily");
@@ -1756,6 +1757,7 @@ function GrabProfitMeter() {
           if (typeof parsed.insuranceCostPerDay === "number") setInsuranceCostPerDay(parsed.insuranceCostPerDay);
           if (typeof parsed.touOnPeakRate === "number") setTouOnPeakRate(parsed.touOnPeakRate);
           if (typeof parsed.touOffPeakRate === "number") setTouOffPeakRate(parsed.touOffPeakRate);
+          if (typeof parsed.normalHomeRate === "number") setNormalHomeRate(parsed.normalHomeRate);
           if (parsed.themeMode) setThemeMode(parsed.themeMode);
           if (typeof parsed.monthlyGoal === "number") setMonthlyGoal(parsed.monthlyGoal);
           if (Array.isArray(parsed.workDays)) setWorkDays(parsed.workDays);
@@ -1899,6 +1901,7 @@ function GrabProfitMeter() {
           insuranceCostPerDay,
           touOnPeakRate,
           touOffPeakRate,
+          normalHomeRate,
           themeMode,
           monthlyGoal,
           workDays,
@@ -1907,7 +1910,7 @@ function GrabProfitMeter() {
         }), false);
       } catch (e) {}
     })();
-  }, [turboTiers, insuranceCostPerDay, touOnPeakRate, touOffPeakRate, themeMode, monthlyGoal, workDays, vehicles, activeVehicleId, loaded]);
+  }, [turboTiers, insuranceCostPerDay, touOnPeakRate, touOffPeakRate, normalHomeRate, themeMode, monthlyGoal, workDays, vehicles, activeVehicleId, loaded]);
   useEffect(() => {
     if (!loaded) return;
     (async () => {
@@ -2053,14 +2056,14 @@ function GrabProfitMeter() {
   const activeEnergyLabel = isActiveVehicleEV ? "ค่าไฟ" : "ค่าน้ำมัน";
   const activeEnergyUnitShort = isActiveVehicleEV ? "kWh" : "ลิตร";
   const activeEfficiencyUnit = isActiveVehicleEV ? "กม./kWh" : "กม./ลิตร";
-  const homeChargeCost = Math.round((homeChargeKwh || 0) * (homeChargeTouPeriod === "onpeak" ? touOnPeakRate : touOffPeakRate) * 100) / 100;
+  const homeChargeCost = Math.round((homeChargeKwh || 0) * (homeChargeTouPeriod === "onpeak" ? touOnPeakRate : homeChargeTouPeriod === "normal" ? normalHomeRate : touOffPeakRate) * 100) / 100;
   useEffect(() => {
     if (!isFormVehicleEV) return;
     const combinedCost = Math.round((homeChargeCost + (outsideChargeCost || 0)) * 100) / 100;
     const combinedKwh = Math.round(((homeChargeKwh || 0) + (outsideChargeKwh || 0)) * 100) / 100;
     setFuelCost(combinedCost);
     setFuelLiters(combinedKwh);
-  }, [isFormVehicleEV, homeChargeKwh, homeChargeTouPeriod, outsideChargeKwh, outsideChargeCost, touOnPeakRate, touOffPeakRate]);
+  }, [isFormVehicleEV, homeChargeKwh, homeChargeTouPeriod, outsideChargeKwh, outsideChargeCost, touOnPeakRate, touOffPeakRate, normalHomeRate]);
   const walletPool = useMemo(() => {
     const thisMonth = todayISO().slice(0, 7);
     const lifetimeProfit = entries.reduce((a, e) => a + (e.profit || 0), 0);
@@ -2662,7 +2665,7 @@ function GrabProfitMeter() {
   };
   const tourVehicle = vehicles.find(v => v.id === tourTripVehicleId);
   const isTourVehicleEV = tourVehicle?.type === "ev";
-  const tourHomeChargeCost = Math.round((tourHomeChargeKwh || 0) * (tourHomeChargeTouPeriod === "onpeak" ? touOnPeakRate : touOffPeakRate) * 100) / 100;
+  const tourHomeChargeCost = Math.round((tourHomeChargeKwh || 0) * (tourHomeChargeTouPeriod === "onpeak" ? touOnPeakRate : tourHomeChargeTouPeriod === "normal" ? normalHomeRate : touOffPeakRate) * 100) / 100;
   const resetTourTripForm = () => {
     setTourTripDate(todayISO());
     setTourTripPackageId("");
@@ -3074,6 +3077,7 @@ function GrabProfitMeter() {
         insuranceCostPerDay,
         touOnPeakRate,
         touOffPeakRate,
+        normalHomeRate,
         themeMode,
         monthlyGoal,
         workDays,
@@ -3279,6 +3283,7 @@ function GrabProfitMeter() {
           const nextInsurance = typeof parsed.settings.insuranceCostPerDay === "number" ? parsed.settings.insuranceCostPerDay : insuranceCostPerDay;
           const nextTouOnPeak = typeof parsed.settings.touOnPeakRate === "number" ? parsed.settings.touOnPeakRate : touOnPeakRate;
           const nextTouOffPeak = typeof parsed.settings.touOffPeakRate === "number" ? parsed.settings.touOffPeakRate : touOffPeakRate;
+          const nextNormalHomeRate = typeof parsed.settings.normalHomeRate === "number" ? parsed.settings.normalHomeRate : normalHomeRate;
           const nextTheme = parsed.settings.themeMode || themeMode;
           const nextMonthlyGoal = typeof parsed.settings.monthlyGoal === "number" ? parsed.settings.monthlyGoal : monthlyGoal;
           const nextWorkDays = Array.isArray(parsed.settings.workDays) ? parsed.settings.workDays : workDays;
@@ -3288,6 +3293,7 @@ function GrabProfitMeter() {
           setInsuranceCostPerDay(nextInsurance);
           setTouOnPeakRate(nextTouOnPeak);
           setTouOffPeakRate(nextTouOffPeak);
+          setNormalHomeRate(nextNormalHomeRate);
           setThemeMode(nextTheme);
           setMonthlyGoal(nextMonthlyGoal);
           setWorkDays(nextWorkDays);
@@ -3299,6 +3305,7 @@ function GrabProfitMeter() {
             insuranceCostPerDay: nextInsurance,
             touOnPeakRate: nextTouOnPeak,
             touOffPeakRate: nextTouOffPeak,
+            normalHomeRate: nextNormalHomeRate,
             themeMode: nextTheme,
             monthlyGoal: nextMonthlyGoal,
             workDays: nextWorkDays,
@@ -5073,12 +5080,20 @@ function GrabProfitMeter() {
       background: homeChargeTouPeriod === "onpeak" ? C.amber : C.panel,
       color: homeChargeTouPeriod === "onpeak" ? "#FFFFFF" : C.textMuted
     }
-  }, "On-Peak (", thb(touOnPeakRate), " ฿/kWh)")), React.createElement("p", {
+  }, "On-Peak (", thb(touOnPeakRate), " ฿/kWh)"), React.createElement("button", {
+    type: "button",
+    onClick: () => setHomeChargeTouPeriod("normal"),
+    className: "flex-1 rounded-lg py-1.5 text-[11px] font-medium",
+    style: {
+      background: homeChargeTouPeriod === "normal" ? C.textMuted : C.panel,
+      color: homeChargeTouPeriod === "normal" ? "#FFFFFF" : C.textMuted
+    }
+  }, "ไฟบ้านปกติ (", thb(normalHomeRate), " ฿/kWh)")), React.createElement("p", {
     className: "mt-2 text-[11px]",
     style: {
       color: C.textFaint
     }
-  }, "Off-Peak = กลางคืน 22:00-9:00 + เสาร์-อาทิตย์-วันหยุดนักขัตฤกษ์ ทั้งวัน, On-Peak = วันธรรมดา 9:00-22:00 (มิเตอร์ TOU) — คำนวณได้", " ", React.createElement("strong", {
+  }, homeChargeTouPeriod === "normal" ? "ยังไม่ได้ใช้เรท TOU — คิดตามอัตราไฟบ้านปกติ" : "Off-Peak = กลางคืน 22:00-9:00 + เสาร์-อาทิตย์-วันหยุดนักขัตฤกษ์ ทั้งวัน, On-Peak = วันธรรมดา 9:00-22:00 (มิเตอร์ TOU) — คำนวณได้", " ", React.createElement("strong", {
     style: {
       color: C.text
     }
@@ -5198,26 +5213,34 @@ function GrabProfitMeter() {
     style: {
       color: C.text
     }
-  }, "⚡ อัตราค่าไฟ TOU (สำหรับคำนวณค่าชาร์จที่บ้าน)"), React.createElement("div", {
+  }, "⚡ อัตราค่าไฟ (สำหรับคำนวณค่าชาร์จที่บ้าน)"), React.createElement("div", {
     className: "grid grid-cols-2 gap-2.5"
   }, React.createElement(Field, {
-    label: "Off-Peak",
+    label: "Off-Peak (TOU)",
     suffix: "บาท/kWh",
     value: touOffPeakRate,
     onChange: setTouOffPeakRate,
     placeholder: "2.6369"
   }), React.createElement(Field, {
-    label: "On-Peak",
+    label: "On-Peak (TOU)",
     suffix: "บาท/kWh",
     value: touOnPeakRate,
     onChange: setTouOnPeakRate,
     placeholder: "5.7982"
+  })), React.createElement("div", {
+    className: "mt-2.5"
+  }, React.createElement(Field, {
+    label: "ไฟบ้านปกติ (ยังไม่ใช้เรท TOU)",
+    suffix: "บาท/kWh",
+    value: normalHomeRate,
+    onChange: setNormalHomeRate,
+    placeholder: "4.4"
   })), React.createElement("p", {
     className: "mt-1.5 text-[11px]",
     style: {
       color: C.textFaint
     }
-  }, "ปรับให้ตรงกับอัตราจริงของมิเตอร์ TOU ได้ (ค่าเริ่มต้นเป็นอัตราโดยประมาณ อาจไม่ตรงกับบิลจริงเป๊ะ)")), React.createElement(Field, {
+  }, "ปรับให้ตรงกับอัตราจริงของบ้านได้ — ถ้ายังไม่ได้เปลี่ยนมิเตอร์เป็น TOU ให้เลือก \"ไฟบ้านปกติ\" ตอนบันทึกค่าชาร์จแทน (ค่าเริ่มต้นเป็นอัตราโดยประมาณ อาจไม่ตรงกับบิลจริงเป๊ะ)")), React.createElement(Field, {
     label: "ค่าใช้จ่ายอื่น (ค่าทางด่วน, อาหาร, ซ่อมบำรุง ฯลฯ)",
     suffix: "บาท",
     value: otherCost,
@@ -9285,7 +9308,15 @@ function GrabProfitMeter() {
       background: tourHomeChargeTouPeriod === "onpeak" ? C.amber : C.panel,
       color: tourHomeChargeTouPeriod === "onpeak" ? "#FFFFFF" : C.textMuted
     }
-  }, "On-Peak (", thb(touOnPeakRate), " ฿/kWh)")), React.createElement("p", {
+  }, "On-Peak (", thb(touOnPeakRate), " ฿/kWh)"), React.createElement("button", {
+    type: "button",
+    onClick: () => setTourHomeChargeTouPeriod("normal"),
+    className: "flex-1 rounded-lg py-1.5 text-[11px] font-medium",
+    style: {
+      background: tourHomeChargeTouPeriod === "normal" ? C.textMuted : C.panel,
+      color: tourHomeChargeTouPeriod === "normal" ? "#FFFFFF" : C.textMuted
+    }
+  }, "ไฟบ้านปกติ (", thb(normalHomeRate), " ฿/kWh)")), React.createElement("p", {
     className: "mt-2 text-[11px]",
     style: {
       color: C.textFaint
