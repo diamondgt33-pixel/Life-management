@@ -3068,6 +3068,7 @@ function GrabProfitMeter() {
       paidExpenses,
       wallets,
       walletTransfers,
+      walletMoveLogs,
       walletPoolAdjustment,
       tourPackages,
       tourTrips,
@@ -3118,7 +3119,7 @@ function GrabProfitMeter() {
       "ค่าน้ำมัน/ค่าไฟ": e.fuelCost || 0,
       "ลิตร/kWh": e.fuelLiters || 0,
       "ชาร์จบ้าน (kWh)": e.homeChargeKwh || 0,
-      "ช่วงเวลาชาร์จบ้าน": e.homeChargeTouPeriod === "onpeak" ? "On-Peak" : e.homeChargeTouPeriod === "offpeak" ? "Off-Peak" : "",
+      "ช่วงเวลาชาร์จบ้าน": e.homeChargeTouPeriod === "onpeak" ? "On-Peak" : e.homeChargeTouPeriod === "offpeak" ? "Off-Peak" : e.homeChargeTouPeriod === "normal" ? "ไฟบ้านปกติ" : "",
       "ชาร์จนอกบ้าน (kWh)": e.outsideChargeKwh || 0,
       "ค่าชาร์จนอกบ้าน": e.outsideChargeCost || 0,
       ค่าประกัน: Math.round((e.insuranceCost || 0) * 100) / 100,
@@ -3138,20 +3139,37 @@ function GrabProfitMeter() {
       หมวดหมู่: e.category,
       จำนวนเงิน: e.amount || 0,
       กระเป๋า: wallets.find(w => w.id === e.walletId)?.name || "",
-      โน้ต: e.note || ""
+      โน้ต: e.note || "",
+      มีรูปแนบ: e.receiptImage ? "มี" : ""
     }));
     window.XLSX.utils.book_append_sheet(wb, window.XLSX.utils.json_to_sheet(dailyExpRows), "รายจ่ายทั่วไป");
     const fixedExpRows = fixedExpenses.map(e => ({
       รายการ: e.name,
-      "จำนวนเงิน/เดือน": e.amount || 0
+      "จำนวนเงิน/เดือน": e.amount || 0,
+      กระเป๋า: wallets.find(w => w.id === e.walletId)?.name || (e.walletId ? "" : "ตัดใช้เลย/กระเป๋ากลาง"),
+      "ยอดผ่อนทั้งหมด": e.installmentTotalAmount || "",
+      "ผ่อนกี่เดือน": e.installmentTotalMonths || "",
+      "เริ่มผ่อนเดือน": e.installmentStartMonth || "",
+      "ผ่อนหมดเดือน": e.installmentEndMonth || ""
     }));
     window.XLSX.utils.book_append_sheet(wb, window.XLSX.utils.json_to_sheet(fixedExpRows), "รายจ่ายรายเดือน");
     const extraIncomeRows = [...extraIncome].sort((a, b) => a.date.localeCompare(b.date)).map(e => ({
       วันที่: e.date,
       จำนวนเงิน: e.amount || 0,
-      โน้ต: e.note || ""
+      โน้ต: e.note || "",
+      มีรูปแนบ: e.receiptImage ? "มี" : ""
     }));
     window.XLSX.utils.book_append_sheet(wb, window.XLSX.utils.json_to_sheet(extraIncomeRows), "รายได้พิเศษ");
+    const walletMoveRows = [...walletMoveLogs].sort((a, b) => a.date.localeCompare(b.date)).map(m => ({
+      วันที่: m.date,
+      โอนจาก: wallets.find(w => w.id === m.fromWalletId)?.name || "",
+      โอนไป: wallets.find(w => w.id === m.toWalletId)?.name || "",
+      จำนวนเงิน: m.amount || 0,
+      โน้ต: m.note || ""
+    }));
+    if (walletMoveRows.length > 0) {
+      window.XLSX.utils.book_append_sheet(wb, window.XLSX.utils.json_to_sheet(walletMoveRows), "โอนเงินระหว่างกระเป๋า");
+    }
     const walletRows = wallets.map(w => ({
       กระเป๋า: w.name,
       ยอดคงเหลือ: w.balance || 0
@@ -3186,6 +3204,20 @@ function GrabProfitMeter() {
       };
     });
     window.XLSX.utils.book_append_sheet(wb, window.XLSX.utils.json_to_sheet(drivingRows), "เวลาขับรถ");
+    const tourRows = [...tourTrips].sort((a, b) => a.date.localeCompare(b.date)).map(t => ({
+      วันที่: t.date,
+      แพคเกจ: t.packageName || "",
+      รถที่ใช้: vehicles.find(v => v.id === (t.vehicleId || "default"))?.name || "รถของฉัน",
+      ราคาที่เก็บลูกค้า: t.price || 0,
+      "ค่าใช้จ่ายอื่นรวม": t.totalCosts || 0,
+      "ค่าน้ำมัน/ค่าไฟ": t.fuelCost || 0,
+      "ระยะทาง (กม.)": t.distanceKm || 0,
+      กำไร: Math.round((t.profit || 0) * 100) / 100,
+      โน้ต: t.note || ""
+    }));
+    if (tourRows.length > 0) {
+      window.XLSX.utils.book_append_sheet(wb, window.XLSX.utils.json_to_sheet(tourRows), "ไพร์เวททัว");
+    }
     window.XLSX.writeFile(wb, `grab-profit-${todayISO()}.xlsx`);
   };
   const handleImportFile = file => {
@@ -3251,6 +3283,12 @@ function GrabProfitMeter() {
           setWalletTransfers(merged);
           await window.storage.set("wallet-transfers", JSON.stringify(merged), false);
           restoredParts.push("ประวัติโอนกระเป๋า");
+        }
+        if (Array.isArray(parsed.walletMoveLogs)) {
+          const merged = mergeById(walletMoveLogs, parsed.walletMoveLogs);
+          setWalletMoveLogs(merged);
+          await window.storage.set("wallet-move-logs", JSON.stringify(merged), false);
+          restoredParts.push("ประวัติโอนเงินระหว่างกระเป๋า");
         }
         if (typeof parsed.walletPoolAdjustment === "number") {
           setWalletPoolAdjustment(parsed.walletPoolAdjustment);
