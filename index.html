@@ -3767,6 +3767,50 @@ function GrabProfitMeter() {
       isCurrentMonth
     };
   }, [entries, fixedExpenses, fixedExpViewMonth, extraIncome]);
+  const monthlyFullSummary = useMemo(() => {
+    const thisMonth = fixedExpViewMonth;
+    const grabProfit = Math.round(entries.filter(e => e.date.slice(0, 7) === thisMonth).reduce((a, e) => a + (e.profit || 0), 0) * 100) / 100;
+    const extraIncomeTotal = Math.round(extraIncome.filter(e => e.date.slice(0, 7) === thisMonth).reduce((a, e) => a + (e.amount || 0), 0) * 100) / 100;
+    const tourProfitTotal = Math.round(tourTrips.filter(t => t.date.slice(0, 7) === thisMonth).reduce((a, t) => a + (t.profit || 0), 0) * 100) / 100;
+    const totalIncome = Math.round((grabProfit + extraIncomeTotal + tourProfitTotal) * 100) / 100;
+    const paidIds = paidExpenses[thisMonth] || [];
+    const fixedPaidTotal = Math.round(fixedExpenses.filter(e => paidIds.includes(e.id)).reduce((a, e) => a + (e.amount || 0), 0) * 100) / 100;
+    const dailyExpTotal = Math.round(dailyExpenses.filter(e => e.date.slice(0, 7) === thisMonth).reduce((a, e) => a + (e.amount || 0), 0) * 100) / 100;
+    const totalExpense = Math.round((fixedPaidTotal + dailyExpTotal) * 100) / 100;
+    const net = Math.round((totalIncome - totalExpense) * 100) / 100;
+    const segments = [{
+      name: "กำไร Grab",
+      value: Math.max(grabProfit, 0),
+      color: C.green
+    }, {
+      name: "รายได้พิเศษ",
+      value: Math.max(extraIncomeTotal, 0),
+      color: C.greenIncentive
+    }, {
+      name: "กำไรไพร์เวททัว",
+      value: Math.max(tourProfitTotal, 0),
+      color: C.blue
+    }, {
+      name: "รายจ่ายคงที่ที่จ่ายแล้ว",
+      value: Math.max(fixedPaidTotal, 0),
+      color: C.amber
+    }, {
+      name: "รายจ่ายทั่วไป",
+      value: Math.max(dailyExpTotal, 0),
+      color: C.red
+    }].filter(s => s.value > 0);
+    return {
+      grabProfit,
+      extraIncomeTotal,
+      tourProfitTotal,
+      totalIncome,
+      fixedPaidTotal,
+      dailyExpTotal,
+      totalExpense,
+      net,
+      segments
+    };
+  }, [entries, extraIncome, tourTrips, fixedExpViewMonth, paidExpenses, fixedExpenses, dailyExpenses]);
   const expenseCategoryOptions = useMemo(() => {
     const fromFixed = fixedExpenses.map(e => e.name).filter(Boolean);
     return [...new Set([...DAILY_EXPENSE_CATEGORIES, ...fromFixed])];
@@ -7227,7 +7271,89 @@ function GrabProfitMeter() {
     style: {
       color: C.textFaint
     }
-  }, monthlyCoverage.isCurrentMonth ? `วันที่ ${monthlyCoverage.dayOfMonth} จาก ${monthlyCoverage.daysInMonth} วันของเดือนนี้` : `ครบเดือนแล้ว (${monthlyCoverage.daysInMonth} วัน)`)), React.createElement("div", {
+  }, monthlyCoverage.isCurrentMonth ? `วันที่ ${monthlyCoverage.dayOfMonth} จาก ${monthlyCoverage.daysInMonth} วันของเดือนนี้` : `ครบเดือนแล้ว (${monthlyCoverage.daysInMonth} วัน)`)), monthlyFullSummary.segments.length > 0 && React.createElement("div", {
+    className: "mt-4 rounded-xl p-3.5",
+    style: {
+      background: C.panel,
+      border: `1px solid ${C.hairline}`
+    }
+  }, React.createElement("div", {
+    className: "mb-3 text-xs font-semibold",
+    style: {
+      color: C.text
+    }
+  }, "🥧 ภาพรวมเงินเข้า-ออกทั้งเดือน (ไม่ใช่แค่กำไร Grab)"), React.createElement("div", {
+    className: "flex items-center justify-center gap-4"
+  }, React.createElement("div", {
+    className: "relative shrink-0"
+  }, React.createElement(DonutChart, {
+    segments: monthlyFullSummary.segments.map(s => ({
+      value: s.value,
+      color: s.color
+    })),
+    size: 108,
+    thickness: 15
+  }), React.createElement("div", {
+    className: "absolute inset-0 flex flex-col items-center justify-center"
+  }, React.createElement("span", {
+    className: "text-[9px]",
+    style: {
+      color: C.textFaint
+    }
+  }, "กำไรสุทธิ"), React.createElement("span", {
+    className: "text-xs font-bold",
+    style: {
+      color: monthlyFullSummary.net >= 0 ? C.green : C.red,
+      fontFamily: "'JetBrains Mono', monospace"
+    }
+  }, thb(monthlyFullSummary.net)))), React.createElement("div", {
+    className: "flex flex-1 flex-col gap-1.5"
+  }, monthlyFullSummary.segments.map((s, i) => React.createElement("div", {
+    key: i,
+    className: "flex items-center justify-between gap-2 text-[11px]"
+  }, React.createElement("span", {
+    className: "flex items-center gap-1.5",
+    style: {
+      color: C.textMuted
+    }
+  }, React.createElement("span", {
+    className: "h-2 w-2 shrink-0 rounded-full",
+    style: {
+      background: s.color
+    }
+  }), s.name), React.createElement("span", {
+    style: {
+      color: C.text,
+      fontFamily: "'JetBrains Mono', monospace"
+    }
+  }, thb(s.value)))))), React.createElement("div", {
+    className: "mt-3 grid grid-cols-2 gap-2 border-t pt-2.5 text-center",
+    style: {
+      borderColor: C.hairline
+    }
+  }, React.createElement("div", null, React.createElement("div", {
+    className: "text-[10px]",
+    style: {
+      color: C.textFaint
+    }
+  }, "รายได้รวมเดือนนี้"), React.createElement("div", {
+    className: "text-sm font-semibold",
+    style: {
+      color: C.green,
+      fontFamily: "'JetBrains Mono', monospace"
+    }
+  }, thb(monthlyFullSummary.totalIncome), " ฿")), React.createElement("div", null, React.createElement("div", {
+    className: "text-[10px]",
+    style: {
+      color: C.textFaint
+    }
+  }, "รายจ่ายรวมเดือนนี้"), React.createElement("div", {
+    className: "text-sm font-semibold",
+    style: {
+      color: C.red,
+      fontFamily: "'JetBrains Mono', monospace"
+    }
+  }, thb(monthlyFullSummary.totalExpense), " ฿")))), React.createElement("div", {
     className: "mt-4 rounded-xl p-3.5",
     style: {
       background: C.panel,
