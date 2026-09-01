@@ -696,7 +696,7 @@ const buildMaintenanceCostByDate = (entries, maintenanceRecords) => {
     byDate: {},
     currentSegmentRate: 0
   };
-  const cashRecords = (maintenanceRecords || []).filter(r => r.paymentMethod !== "credit");
+  const cashRecords = (maintenanceRecords || []).filter(r => r.paymentMethod !== "credit" && r.paymentMethod !== "savings");
   if (cashRecords.length === 0) return result;
   const recordsByVehicle = {};
   cashRecords.forEach(r => {
@@ -743,9 +743,14 @@ const shiftMondayDays = (mondayIso, days) => {
   return toLocalISO(d);
 };
 const isFixedItemActiveInMonth = (item, ym) => {
-  if (!item.installmentEndMonth) return true;
-  const start = item.installmentStartMonth || ym;
-  return ym >= start && ym <= item.installmentEndMonth;
+  const start = item.installmentStartMonth;
+  if (!start) return true;
+  let end = item.installmentEndMonth;
+  if (!end && item.installmentTotalMonths > 0) {
+    end = addMonthsToYm(start, item.installmentTotalMonths - 1);
+  }
+  if (!end) return true;
+  return ym >= start && ym <= end;
 };
 const addMonthsToYm = (ym, months) => {
   const [y, m] = ym.split("-").map(Number);
@@ -3201,7 +3206,7 @@ function GrabProfitMeter() {
       รถ: vehicles.find(v => v.id === (r.vehicleId || "default"))?.name || "รถของฉัน",
       ประเภท: r.type,
       ค่าใช้จ่าย: r.cost || 0,
-      ชำระด้วย: r.paymentMethod === "credit" ? "บัตรเครดิต (ผ่อน)" : "เงินสด",
+      ชำระด้วย: r.paymentMethod === "credit" ? "บัตรเครดิต (ผ่อน)" : r.paymentMethod === "savings" ? "เงินเก็บ/สำรอง (ไม่หักกำไรเดือนนี้)" : "เงินสด",
       โน้ต: r.note || ""
     }));
     window.XLSX.utils.book_append_sheet(wb, window.XLSX.utils.json_to_sheet(maintRows), "ค่าซ่อมบำรุง");
@@ -3755,7 +3760,8 @@ function GrabProfitMeter() {
     const grabProfitThisMonth = entries.filter(e => e.date.slice(0, 7) === thisMonth).reduce((a, e) => a + (e.profit || 0), 0);
     const extraIncomeThisMonth = extraIncome.filter(e => e.date.slice(0, 7) === thisMonth).reduce((a, e) => a + (e.amount || 0), 0);
     const profitThisMonth = grabProfitThisMonth + extraIncomeThisMonth;
-    const activeFixedExpenses = fixedExpenses.filter(e => isFixedItemActiveInMonth(e, thisMonth));
+    const paidIds = paidExpenses[thisMonth] || [];
+    const activeFixedExpenses = fixedExpenses.filter(e => isFixedItemActiveInMonth(e, thisMonth) && !((e.installmentTotalMonths || 0) <= 1 && paidIds.includes(e.id)));
     const totalFixed = activeFixedExpenses.reduce((a, e) => a + (e.amount || 0), 0);
     const pct = totalFixed > 0 ? profitThisMonth / totalFixed * 100 : 0;
     const remaining = Math.max(0, totalFixed - profitThisMonth);
@@ -3785,7 +3791,7 @@ function GrabProfitMeter() {
       dayOfMonth,
       isCurrentMonth
     };
-  }, [entries, fixedExpenses, fixedExpViewMonth, extraIncome]);
+  }, [entries, fixedExpenses, fixedExpViewMonth, extraIncome, paidExpenses]);
   const monthlyFullSummary = useMemo(() => {
     const thisMonth = fixedExpViewMonth;
     const grabProfit = Math.round(entries.filter(e => e.date.slice(0, 7) === thisMonth).reduce((a, e) => a + (e.profit || 0), 0) * 100) / 100;
@@ -6189,13 +6195,30 @@ function GrabProfitMeter() {
     }
   }, "💵 เงินสด"), React.createElement("button", {
     type: "button",
+    onClick: () => setMaintPaymentMethod("savings"),
+    className: "flex-1 rounded-lg py-2 text-xs font-medium",
+    style: {
+      background: maintPaymentMethod === "savings" ? C.amber : C.bgSoft,
+      color: maintPaymentMethod === "savings" ? "#FFFFFF" : C.textFaint
+    }
+  }, "🏺 เงินเก็บ/สำรอง"), React.createElement("button", {
+    type: "button",
     onClick: () => setMaintPaymentMethod("credit"),
     className: "flex-1 rounded-lg py-2 text-xs font-medium",
     style: {
       background: maintPaymentMethod === "credit" ? C.blue : C.bgSoft,
       color: maintPaymentMethod === "credit" ? "#FFFFFF" : C.textFaint
     }
-  }, "💳 บัตรเครดิต"))), maintPaymentMethod === "cash" ? React.createElement("div", null, React.createElement("span", {
+  }, "💳 บัตรเครดิต"))), maintPaymentMethod === "savings" && React.createElement("p", {
+    className: "text-[11px] leading-relaxed",
+    style: {
+      color: C.textFaint
+    }
+  }, "ใช้ตอนจ่ายด้วยเงินที่เก็บสะสมไว้จากเดือนก่อนๆ ไม่ใช่กำไรของวันนี้ — รายการนี้จะหักออกจากกระเป๋าที่เลือกทันที แต่ ", React.createElement("strong", {
+    style: {
+      color: C.text
+    }
+  }, "จะไม่ไปลดกำไรที่คำนวณของวันนี้/เดือนนี้"), " (กันไม่ให้ไปกระทบยอดกระทบบัญชีสิ้นเดือนแบบผิดๆ)"), (maintPaymentMethod === "cash" || maintPaymentMethod === "savings") ? React.createElement("div", null, React.createElement("span", {
     className: "mb-1.5 block text-xs",
     style: {
       color: C.textMuted
@@ -6405,7 +6428,13 @@ function GrabProfitMeter() {
       background: C.blue,
       color: "#FFFFFF"
     }
-  }, "💳 ผ่อน"), vehicles.length > 1 && React.createElement("span", {
+  }, "💳 ผ่อน"), r.paymentMethod === "savings" && React.createElement("span", {
+    className: "ml-1.5 rounded px-1.5 py-0.5 text-[10px] font-medium",
+    style: {
+      background: C.amber,
+      color: "#FFFFFF"
+    }
+  }, "🏺 เงินเก็บ"), vehicles.length > 1 && React.createElement("span", {
     className: "ml-1.5 text-[11px]",
     style: {
       color: C.textFaint
