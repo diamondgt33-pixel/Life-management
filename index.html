@@ -1619,6 +1619,7 @@ function GrabProfitMeter() {
   const [showReconcileConfirm, setShowReconcileConfirm] = useState(false);
   const [showResetPoolConfirm, setShowResetPoolConfirm] = useState(false);
   const [showResetToMonthConfirm, setShowResetToMonthConfirm] = useState(false);
+  const [manualUnallocatedInput, setManualUnallocatedInput] = useState("");
   const [showExtraIncomeForm, setShowExtraIncomeForm] = useState(false);
   const [extraIncomeDate, setExtraIncomeDate] = useState(todayISO());
   const [extraIncomeAmount, setExtraIncomeAmount] = useState(0);
@@ -2939,6 +2940,19 @@ function GrabProfitMeter() {
       reportSaveError(e);
     }
   };
+  const setUnallocatedManually = async targetValue => {
+    setSaveError("");
+    const target = Math.round(Number(targetValue) * 100) / 100;
+    if (Number.isNaN(target)) return;
+    const rawNow = Math.round(walletPool.rawUnallocated * 100) / 100;
+    const newAdjustment = Math.round((rawNow - target) * 100) / 100;
+    setWalletPoolAdjustment(newAdjustment);
+    try {
+      await window.storage.set("wallet-pool-adjustment", JSON.stringify(newAdjustment), false);
+    } catch (e) {
+      reportSaveError(e);
+    }
+  };
   const undoResetBaseline = async () => {
     setSaveError("");
     setWalletPoolAdjustment(0);
@@ -2985,10 +2999,14 @@ function GrabProfitMeter() {
       setSaveError("กระทบยอดได้เฉพาะเดือนที่จบไปแล้วเท่านั้น เดือนปัจจุบันยังมีรายได้ไหลเข้าต่อเนื่องอยู่");
       return;
     }
+    const latestRecon = await readLatestArray("monthly-reconciliations", monthlyReconciliations);
+    const prevRecord = latestRecon[reconcileMonth];
     const calculated = calculatedIncomeForMonth(reconcileMonth);
     const actualTotal = Math.round(((reconcileBankAmount || 0) + (reconcileCashAmount || 0)) * 100) / 100;
     const diff = Math.round((calculated - actualTotal) * 100) / 100;
-    const newAdjustment = Math.round((walletPoolAdjustment + diff) * 100) / 100;
+    const latestAdjustment = await readLatestArray("wallet-pool-adjustment", walletPoolAdjustment);
+    const prevDiff = prevRecord ? prevRecord.diff || 0 : 0;
+    const newAdjustment = Math.round((latestAdjustment - prevDiff + diff) * 100) / 100;
     setWalletPoolAdjustment(newAdjustment);
     try {
       await window.storage.set("wallet-pool-adjustment", JSON.stringify(newAdjustment), false);
@@ -2996,11 +3014,13 @@ function GrabProfitMeter() {
       reportSaveError(e);
       return;
     }
-    if (reconcileCashAmount > 0) {
+    const prevCashAmount = prevRecord ? prevRecord.cashAmount || 0 : 0;
+    const cashDelta = Math.round(((reconcileCashAmount || 0) - prevCashAmount) * 100) / 100;
+    if (cashDelta !== 0) {
       const {
         wallet
       } = await getOrCreateCashWallet();
-      await adjustWalletBalance(wallet.id, reconcileCashAmount);
+      await adjustWalletBalance(wallet.id, cashDelta);
     }
     const record = {
       bankAmount: reconcileBankAmount || 0,
@@ -3009,9 +3029,8 @@ function GrabProfitMeter() {
       diff,
       reconciledAt: new Date().toISOString()
     };
-    const latest = await readLatestArray("monthly-reconciliations", monthlyReconciliations);
     const next = {
-      ...latest,
+      ...latestRecon,
       [reconcileMonth]: record
     };
     setMonthlyReconciliations(next);
@@ -8159,7 +8178,46 @@ function GrabProfitMeter() {
       color: "#FFFFFF"
     },
     type: "button"
-  }, "ยืนยันเคลียร์เดือนก่อนๆ")))), walletPoolAdjustment !== 0 && React.createElement("div", {
+  }, "ยืนยันเคลียร์เดือนก่อนๆ")))), React.createElement("div", {
+    className: "mt-2 rounded-lg p-3",
+    style: {
+      background: C.bgSoft
+    }
+  }, React.createElement("p", {
+    className: "mb-2 text-[11px] leading-relaxed",
+    style: {
+      color: C.textFaint
+    }
+  }, "🔧 ตั้งยอด \"ยังไม่ได้จัดสรร\" เองแบบตรงๆ (เผื่อยอดเพี้ยนจากบั๊กหรืออยากแก้เอง) — พิมพ์ยอดที่ต้องการแล้วกดยืนยัน ยอดปัจจุบันคือ ", thb(walletPool.unallocated), " บาท"), React.createElement("div", {
+    className: "flex gap-2"
+  }, React.createElement("input", {
+    type: "number",
+    inputMode: "decimal",
+    value: manualUnallocatedInput,
+    onChange: e => setManualUnallocatedInput(e.target.value),
+    placeholder: String(walletPool.unallocated),
+    className: "flex-1 rounded-lg px-3 py-2 text-sm outline-none",
+    style: {
+      background: C.panel,
+      color: C.text,
+      border: `1px solid ${C.hairline}`,
+      fontFamily: "'JetBrains Mono', monospace"
+    }
+  }), React.createElement("button", {
+    onClick: () => {
+      if (manualUnallocatedInput === "") return;
+      setUnallocatedManually(manualUnallocatedInput);
+      setManualUnallocatedInput("");
+    },
+    disabled: manualUnallocatedInput === "",
+    className: "rounded-lg px-4 text-xs font-semibold",
+    style: {
+      background: C.green,
+      color: "#FFFFFF",
+      opacity: manualUnallocatedInput === "" ? 0.5 : 1
+    },
+    type: "button"
+  }, "ยืนยัน"))), walletPoolAdjustment !== 0 && React.createElement("div", {
     className: "mt-2 rounded-lg p-3",
     style: {
       background: C.bgSoft
