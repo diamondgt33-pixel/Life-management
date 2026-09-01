@@ -1625,6 +1625,8 @@ function GrabProfitMeter() {
   const [showResetPoolConfirm, setShowResetPoolConfirm] = useState(false);
   const [showResetToMonthConfirm, setShowResetToMonthConfirm] = useState(false);
   const [manualUnallocatedInput, setManualUnallocatedInput] = useState("");
+  const [showClearReceiptsConfirm, setShowClearReceiptsConfirm] = useState(false);
+  const [clearReceiptsScope, setClearReceiptsScope] = useState("all");
   const [showExtraIncomeForm, setShowExtraIncomeForm] = useState(false);
   const [extraIncomeDate, setExtraIncomeDate] = useState(todayISO());
   const [extraIncomeAmount, setExtraIncomeAmount] = useState(0);
@@ -2412,6 +2414,12 @@ function GrabProfitMeter() {
   }, [maintenanceRecords, entries, maintFilterVehicleId]);
   const commissionCost = 0;
   const insuranceCost = income > 0 ? insuranceCostPerDay || 0 : 0;
+  const depreciationCost = (() => {
+    const veh = vehicles.find(v => v.id === formVehicleId);
+    if (!veh || !(veh.purchasePrice > 0) || !(veh.lifetimeKm > 0) || !(distanceKm > 0)) return 0;
+    const perKm = Math.max(veh.purchasePrice - (veh.resaleValue || 0), 0) / veh.lifetimeKm;
+    return Math.round(perKm * distanceKm * 100) / 100;
+  })();
   const INCENTIVE_TAX_RATE = 0.03;
   const incentiveTax = Math.round(((incentive || 0) + (turboBonus || 0) + (weeklyTurboBonus || 0)) * INCENTIVE_TAX_RATE * 100) / 100;
   const maintenanceCostToday = (() => {
@@ -2421,7 +2429,7 @@ function GrabProfitMeter() {
     const segments = buildMaintenanceCostByDate(workDates, maintenanceRecords);
     return segments.byDate[date] || 0;
   })();
-  const totalCost = fuelCost + commissionCost + (otherCost || 0) + insuranceCost + incentiveTax + maintenanceCostToday;
+  const totalCost = fuelCost + commissionCost + (otherCost || 0) + insuranceCost + incentiveTax + maintenanceCostToday + depreciationCost;
   const totalIncome = income + (tips || 0) + (incentive || 0) + (turboBonus || 0) + (weeklyTurboBonus || 0);
   const profit = totalIncome - totalCost;
   const costRatio = totalIncome > 0 ? totalCost / totalIncome : 0;
@@ -2452,6 +2460,7 @@ function GrabProfitMeter() {
       insuranceCost,
       incentiveTax,
       maintenanceCost: maintenanceCostToday,
+      depreciationCost,
       totalCost,
       totalIncome,
       profit
@@ -2942,6 +2951,38 @@ function GrabProfitMeter() {
       reportSaveError(e);
     }
   };
+  const clearOldReceiptImages = async scope => {
+    setSaveError("");
+    let cutoff = null;
+    if (scope === "30d") {
+      const d = new Date();
+      d.setDate(d.getDate() - 30);
+      cutoff = d.toISOString().slice(0, 10);
+    } else if (scope === "90d") {
+      const d = new Date();
+      d.setDate(d.getDate() - 90);
+      cutoff = d.toISOString().slice(0, 10);
+    }
+    const shouldClear = date => cutoff === null || date < cutoff;
+    const latestDailyExp = await readLatestArray("daily-expenses", dailyExpenses);
+    const nextDailyExp = latestDailyExp.map(e => e.receiptImage && shouldClear(e.date) ? {
+      ...e,
+      receiptImage: null
+    } : e);
+    setDailyExpenses(nextDailyExp);
+    const latestExtraIncome = await readLatestArray("extra-income", extraIncome);
+    const nextExtraIncome = latestExtraIncome.map(e => e.receiptImage && shouldClear(e.date) ? {
+      ...e,
+      receiptImage: null
+    } : e);
+    setExtraIncome(nextExtraIncome);
+    try {
+      await window.storage.set("daily-expenses", JSON.stringify(nextDailyExp), false);
+      await window.storage.set("extra-income", JSON.stringify(nextExtraIncome), false);
+    } catch (e) {
+      reportSaveError(e);
+    }
+  };
   const resetUnallocatedToZero = async () => {
     setSaveError("");
     const newAdjustment = Math.round(walletPool.rawUnallocated * 100) / 100;
@@ -3167,6 +3208,7 @@ function GrabProfitMeter() {
       ค่าประกัน: Math.round((e.insuranceCost || 0) * 100) / 100,
       "ภาษีอินเซนทีฟ+เทอร์โบ 3%": Math.round((e.incentiveTax || 0) * 100) / 100,
       ค่าซ่อมบำรุงเฉลี่ย: Math.round((e.maintenanceCost || 0) * 100) / 100,
+      ค่าเสื่อมราคารถ: Math.round((e.depreciationCost || 0) * 100) / 100,
       ค่าใช้จ่ายอื่น: e.otherCost || 0,
       หมายเหตุ: e.otherLabel || "",
       ต้นทุนรวม: Math.round((e.totalCost || 0) * 100) / 100,
@@ -3466,7 +3508,8 @@ function GrabProfitMeter() {
     const insuranceCostSum = sum("insuranceCost");
     const incentiveTaxSum = sum("incentiveTax");
     const maintenanceCostSum = sum("maintenanceCost");
-    const miscCostSum = Math.max(totalCostSum - fuelCostSum - commissionCostSum - insuranceCostSum - incentiveTaxSum - maintenanceCostSum, 0);
+    const depreciationCostSum = sum("depreciationCost");
+    const miscCostSum = Math.max(totalCostSum - fuelCostSum - commissionCostSum - insuranceCostSum - incentiveTaxSum - maintenanceCostSum - depreciationCostSum, 0);
     const profitSum = sum("profit");
     const tipsSum = sum("tips");
     const incentiveSum = sum("incentive");
@@ -3504,6 +3547,7 @@ function GrabProfitMeter() {
       insuranceCost: insuranceCostSum,
       incentiveTax: incentiveTaxSum,
       maintenanceCost: maintenanceCostSum,
+      depreciationCost: depreciationCostSum,
       otherCost: miscCostSum,
       profit: profitSum,
       baseProfit: baseProfitSum,
@@ -4641,6 +4685,10 @@ function GrabProfitMeter() {
       value: periodSummary.maintenanceCost,
       color: C.pink
     }, {
+      label: "ค่าเสื่อมราคารถ",
+      value: periodSummary.depreciationCost,
+      color: C.teal || "#0EA5A5"
+    }, {
       label: "ค่าใช้จ่ายอื่น",
       value: periodSummary.otherCost,
       color: C.red
@@ -4727,7 +4775,17 @@ function GrabProfitMeter() {
       background: C.pink,
       display: "inline-block"
     }
-  }), "ค่าซ่อมบำรุง ", thb(periodSummary.maintenanceCost), " ฿"), React.createElement("span", {
+  }), "ค่าซ่อมบำรุง ", thb(periodSummary.maintenanceCost), " ฿"), periodSummary.depreciationCost > 0 && React.createElement("span", {
+    className: "flex items-center gap-1.5"
+  }, React.createElement("span", {
+    style: {
+      width: 8,
+      height: 8,
+      borderRadius: 9999,
+      background: C.teal || "#0EA5A5",
+      display: "inline-block"
+    }
+  }), "ค่าเสื่อมราคารถ ", thb(periodSummary.depreciationCost), " ฿"), React.createElement("span", {
     className: "flex items-center gap-1.5"
   }, React.createElement("span", {
     style: {
@@ -5103,10 +5161,12 @@ function GrabProfitMeter() {
     }
   }, "เลือกรถที่ใช้บันทึกวันนี้ หรือเพิ่ม/แก้ไขโปรไฟล์รถ (เผื่อมีรถไฟฟ้าในอนาคต)"), vehicles.map(v => React.createElement("div", {
     key: v.id,
-    className: "flex items-center gap-2 rounded-lg p-2",
+    className: "flex flex-col gap-1.5 rounded-lg p-2",
     style: {
       background: C.panel
     }
+  }, React.createElement("div", {
+    className: "flex items-center gap-2"
   }, React.createElement("button", {
     onClick: () => {
       setFormVehicleId(v.id);
@@ -5162,7 +5222,74 @@ function GrabProfitMeter() {
     name: "trash",
     size: 14,
     color: C.textFaint
-  })))), React.createElement("button", {
+  }))), React.createElement("div", {
+    className: "grid grid-cols-3 gap-1.5"
+  }, React.createElement("label", {
+    className: "flex flex-col gap-0.5"
+  }, React.createElement("span", {
+    className: "text-[10px]",
+    style: {
+      color: C.textFaint
+    }
+  }, "ราคารถ (บาท)"), React.createElement("input", {
+    type: "number",
+    inputMode: "decimal",
+    value: v.purchasePrice || "",
+    onChange: e => updateVehicle(v.id, "purchasePrice", e.target.value === "" ? undefined : Number(e.target.value)),
+    placeholder: "0",
+    className: "rounded-md px-2 py-1 text-[11px]",
+    style: {
+      background: C.bgSoft,
+      color: C.text,
+      border: `1px solid ${C.hairline}`,
+      fontFamily: "'JetBrains Mono', monospace"
+    }
+  })), React.createElement("label", {
+    className: "flex flex-col gap-0.5"
+  }, React.createElement("span", {
+    className: "text-[10px]",
+    style: {
+      color: C.textFaint
+    }
+  }, "มูลค่าซาก (คาด)"), React.createElement("input", {
+    type: "number",
+    inputMode: "decimal",
+    value: v.resaleValue || "",
+    onChange: e => updateVehicle(v.id, "resaleValue", e.target.value === "" ? undefined : Number(e.target.value)),
+    placeholder: "0",
+    className: "rounded-md px-2 py-1 text-[11px]",
+    style: {
+      background: C.bgSoft,
+      color: C.text,
+      border: `1px solid ${C.hairline}`,
+      fontFamily: "'JetBrains Mono', monospace"
+    }
+  })), React.createElement("label", {
+    className: "flex flex-col gap-0.5"
+  }, React.createElement("span", {
+    className: "text-[10px]",
+    style: {
+      color: C.textFaint
+    }
+  }, "ระยะทางตลอดอายุ (กม.)"), React.createElement("input", {
+    type: "number",
+    inputMode: "decimal",
+    value: v.lifetimeKm || "",
+    onChange: e => updateVehicle(v.id, "lifetimeKm", e.target.value === "" ? undefined : Number(e.target.value)),
+    placeholder: "0",
+    className: "rounded-md px-2 py-1 text-[11px]",
+    style: {
+      background: C.bgSoft,
+      color: C.text,
+      border: `1px solid ${C.hairline}`,
+      fontFamily: "'JetBrains Mono', monospace"
+    }
+  }))), v.purchasePrice > 0 && v.lifetimeKm > 0 && React.createElement("p", {
+    className: "text-[10px]",
+    style: {
+      color: C.textFaint
+    }
+  }, "≈ ค่าเสื่อม ", thb(Math.round(Math.max(v.purchasePrice - (v.resaleValue || 0), 0) / v.lifetimeKm * 100) / 100), " บาท/กม. (เว้นว่างไว้ถ้าไม่อยากคิดค่าเสื่อม)"))), React.createElement("button", {
     onClick: addVehicle,
     className: "rounded-lg py-2 text-xs font-semibold",
     style: {
@@ -7181,6 +7308,87 @@ function GrabProfitMeter() {
       color: importMsg.startsWith("นำเข้าสำเร็จ") ? C.green : C.red
     }
   }, importMsg)), React.createElement("div", {
+    className: "mt-4 rounded-xl p-3.5",
+    style: {
+      background: C.panel,
+      border: `1px solid ${C.hairline}`
+    }
+  }, React.createElement("div", {
+    className: "mb-2 text-xs font-medium",
+    style: {
+      color: C.textMuted
+    }
+  }, "🧹 ล้างรูปสลิปเก่า (คืนพื้นที่จัดเก็บ)"), React.createElement("p", {
+    className: "mb-2.5 text-[13px] leading-relaxed",
+    style: {
+      color: C.textFaint
+    }
+  }, "รูปสลิปที่แนบไว้ในรายจ่ายทั่วไป/รายได้พิเศษกินพื้นที่เยอะ ถ้าเจอ \"บันทึกไม่สำเร็จ: พื้นที่เต็ม\" ให้ลองล้างรูปเก่าดู — ลบเฉพาะรูป ตัวเลข/วันที่/โน้ตของรายการยังอยู่ครบ แค่รูปหายไป"), React.createElement("div", {
+    className: "mb-2.5 flex gap-1.5"
+  }, React.createElement("button", {
+    type: "button",
+    onClick: () => setClearReceiptsScope("30d"),
+    className: "flex-1 rounded-lg py-1.5 text-[11px] font-medium",
+    style: {
+      background: clearReceiptsScope === "30d" ? C.blue : C.bgSoft,
+      color: clearReceiptsScope === "30d" ? "#FFFFFF" : C.textFaint
+    }
+  }, "เก่ากว่า 30 วัน"), React.createElement("button", {
+    type: "button",
+    onClick: () => setClearReceiptsScope("90d"),
+    className: "flex-1 rounded-lg py-1.5 text-[11px] font-medium",
+    style: {
+      background: clearReceiptsScope === "90d" ? C.blue : C.bgSoft,
+      color: clearReceiptsScope === "90d" ? "#FFFFFF" : C.textFaint
+    }
+  }, "เก่ากว่า 90 วัน"), React.createElement("button", {
+    type: "button",
+    onClick: () => setClearReceiptsScope("all"),
+    className: "flex-1 rounded-lg py-1.5 text-[11px] font-medium",
+    style: {
+      background: clearReceiptsScope === "all" ? C.red : C.bgSoft,
+      color: clearReceiptsScope === "all" ? "#FFFFFF" : C.textFaint
+    }
+  }, "ทั้งหมด")), !showClearReceiptsConfirm ? React.createElement("button", {
+    onClick: () => setShowClearReceiptsConfirm(true),
+    className: "w-full rounded-lg py-2 text-xs font-semibold",
+    style: {
+      background: C.redDim,
+      color: C.red
+    },
+    type: "button"
+  }, "ล้างรูปสลิป") : React.createElement("div", {
+    className: "flex flex-col gap-2 rounded-lg p-3",
+    style: {
+      background: C.redDim
+    }
+  }, React.createElement("p", {
+    className: "text-[11px] leading-relaxed",
+    style: {
+      color: C.red
+    }
+  }, "ยืนยันลบรูปสลิป", clearReceiptsScope === "30d" ? "ที่เก่ากว่า 30 วัน" : clearReceiptsScope === "90d" ? "ที่เก่ากว่า 90 วัน" : "ทั้งหมด", " ออก? กู้คืนไม่ได้ (แนะนำสำรองข้อมูลก่อนถ้ายังไม่ได้กด)"), React.createElement("div", {
+    className: "flex gap-2"
+  }, React.createElement("button", {
+    onClick: () => setShowClearReceiptsConfirm(false),
+    className: "flex-1 rounded-lg py-2 text-xs font-medium",
+    style: {
+      background: C.panel,
+      color: C.textMuted
+    },
+    type: "button"
+  }, "ยกเลิก"), React.createElement("button", {
+    onClick: () => {
+      clearOldReceiptImages(clearReceiptsScope);
+      setShowClearReceiptsConfirm(false);
+    },
+    className: "flex-1 rounded-lg py-2 text-xs font-semibold",
+    style: {
+      background: C.red,
+      color: "#FFFFFF"
+    },
+    type: "button"
+  }, "ยืนยันลบรูป")))), React.createElement("div", {
     className: "mt-4"
   }, React.createElement("button", {
     onClick: () => setShowHistory(s => !s),
