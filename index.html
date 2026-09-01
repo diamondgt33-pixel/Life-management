@@ -3761,7 +3761,7 @@ function GrabProfitMeter() {
     const extraIncomeThisMonth = extraIncome.filter(e => e.date.slice(0, 7) === thisMonth).reduce((a, e) => a + (e.amount || 0), 0);
     const profitThisMonth = grabProfitThisMonth + extraIncomeThisMonth;
     const paidIds = paidExpenses[thisMonth] || [];
-    const activeFixedExpenses = fixedExpenses.filter(e => isFixedItemActiveInMonth(e, thisMonth) && !((e.installmentTotalMonths || 0) <= 1 && paidIds.includes(e.id)));
+    const activeFixedExpenses = fixedExpenses.filter(e => isFixedItemActiveInMonth(e, thisMonth) && !(e.installmentTotalMonths === 1 && paidIds.includes(e.id)));
     const totalFixed = activeFixedExpenses.reduce((a, e) => a + (e.amount || 0), 0);
     const pct = totalFixed > 0 ? profitThisMonth / totalFixed * 100 : 0;
     const remaining = Math.max(0, totalFixed - profitThisMonth);
