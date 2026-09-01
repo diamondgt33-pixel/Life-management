@@ -1777,6 +1777,24 @@ function GrabProfitMeter() {
           }
         }
       } catch (e) {}
+      try {
+        const seeded = await window.storage.get("toll-wallet-seeded", false);
+        if (!seeded || !seeded.value) {
+          const freshWallets = await window.storage.get("wallets", false);
+          const currentWallets = freshWallets && freshWallets.value ? JSON.parse(freshWallets.value) : [];
+          if (!currentWallets.some(w => w.name === "ค่าทางด่วน")) {
+            const tollWallet = {
+              id: `wallet-toll-${Date.now()}`,
+              name: "ค่าทางด่วน",
+              balance: 0
+            };
+            const nextWallets = [...currentWallets, tollWallet];
+            setWallets(nextWallets);
+            await window.storage.set("wallets", JSON.stringify(nextWallets), false);
+          }
+          await window.storage.set("toll-wallet-seeded", JSON.stringify(true), false);
+        }
+      } catch (e) {}
       setLoaded(true);
     })();
   }, []);
