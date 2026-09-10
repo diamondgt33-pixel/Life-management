@@ -4330,7 +4330,7 @@ function GrabProfitMeter() {
         ::-webkit-scrollbar-track { background: transparent; }
         ::-webkit-scrollbar-thumb { background: linear-gradient(180deg, ${C.green}, ${C.blue}); border-radius: 999px; }
       `), React.createElement("div", {
-    className: "w-full max-w-md px-4 pb-16 pt-6 sm:max-w-lg sm:px-6 md:max-w-2xl md:px-8 lg:max-w-3xl"
+    className: "w-full max-w-md px-4 pb-28 pt-6 sm:max-w-lg sm:px-6 md:max-w-2xl md:px-8 lg:max-w-3xl"
   }, saveError && React.createElement("div", {
     className: "mb-4 flex items-start gap-2.5 rounded-xl p-3.5 row-in",
     style: {
@@ -4398,10 +4398,13 @@ function GrabProfitMeter() {
       border: `1px solid ${C.hairline}`
     }
   }, "บันทึกแล้ว ", stats.count, " วัน"))), React.createElement("div", {
-    className: "mb-5 flex gap-1 overflow-x-auto rounded-xl p-1",
+    className: "fixed z-40 mx-auto flex max-w-md gap-1 overflow-x-auto rounded-xl p-1 shadow-lg sm:max-w-lg md:max-w-2xl lg:max-w-3xl",
     style: {
       background: C.panel,
-      border: `1px solid ${C.hairline}`
+      border: `1px solid ${C.hairline}`,
+      left: "1rem",
+      right: "1rem",
+      bottom: "1rem"
     }
   }, React.createElement("button", {
     onClick: () => setActiveTab("income"),
@@ -7242,153 +7245,6 @@ function GrabProfitMeter() {
       fontFamily: "'JetBrains Mono', monospace"
     }
   }, thb(heatmapData.worstDay.profit), " ฿"))))), React.createElement("div", {
-    className: "mt-6 rounded-xl p-3.5",
-    style: {
-      background: C.panel,
-      border: `1px solid ${C.hairline}`
-    }
-  }, React.createElement("div", {
-    className: "mb-2 text-xs font-medium",
-    style: {
-      color: C.textMuted
-    }
-  }, "สำรอง / กู้คืนข้อมูล"), React.createElement("p", {
-    className: "mb-2.5 text-[13px] leading-relaxed",
-    style: {
-      color: C.textFaint
-    }
-  }, "ข้อมูลถูกเก็บไว้ในเบราว์เซอร์เครื่องนี้เท่านั้น แนะนำให้กดสำรองเก็บไว้เป็นระยะ กันข้อมูลหายตอนล้างแอปหรือเปลี่ยนเครื่อง"), React.createElement("div", {
-    className: "grid grid-cols-2 gap-2"
-  }, React.createElement("button", {
-    onClick: exportData,
-    disabled: entries.length === 0,
-    className: "flex items-center justify-center gap-1.5 rounded-lg py-2 text-xs font-medium",
-    style: {
-      background: C.bgSoft,
-      color: entries.length === 0 ? C.textFaint : C.text,
-      border: `1px solid ${C.hairline}`,
-      opacity: entries.length === 0 ? 0.5 : 1
-    }
-  }, React.createElement(Icon, {
-    name: "download",
-    size: 13
-  }), " สำรอง (JSON)"), React.createElement("button", {
-    onClick: () => importInputRef.current?.click(),
-    className: "flex items-center justify-center gap-1.5 rounded-lg py-2 text-xs font-medium",
-    style: {
-      background: C.bgSoft,
-      color: C.text,
-      border: `1px solid ${C.hairline}`
-    }
-  }, React.createElement(Icon, {
-    name: "upload",
-    size: 13
-  }), " นำเข้าข้อมูล"), React.createElement("input", {
-    ref: importInputRef,
-    type: "file",
-    accept: "application/json",
-    className: "hidden",
-    onChange: e => handleImportFile(e.target.files?.[0])
-  }), React.createElement("button", {
-    onClick: exportExcel,
-    disabled: entries.length === 0,
-    className: "col-span-2 flex items-center justify-center gap-1.5 rounded-lg py-2 text-xs font-medium",
-    style: {
-      background: entries.length === 0 ? C.bgSoft : C.greenDim,
-      color: entries.length === 0 ? C.textFaint : C.greenDeep,
-      border: `1px solid ${entries.length === 0 ? C.hairline : "rgba(0,177,79,0.3)"}`,
-      opacity: entries.length === 0 ? 0.5 : 1
-    }
-  }, React.createElement(Icon, {
-    name: "sheet",
-    size: 13
-  }), " ส่งออกเป็น Excel (.xlsx)")), importMsg && React.createElement("div", {
-    className: "mt-2 text-[13px]",
-    style: {
-      color: importMsg.startsWith("นำเข้าสำเร็จ") ? C.green : C.red
-    }
-  }, importMsg)), React.createElement("div", {
-    className: "mt-4 rounded-xl p-3.5",
-    style: {
-      background: C.panel,
-      border: `1px solid ${C.hairline}`
-    }
-  }, React.createElement("div", {
-    className: "mb-2 text-xs font-medium",
-    style: {
-      color: C.textMuted
-    }
-  }, "🧹 ล้างรูปสลิปเก่า (คืนพื้นที่จัดเก็บ)"), React.createElement("p", {
-    className: "mb-2.5 text-[13px] leading-relaxed",
-    style: {
-      color: C.textFaint
-    }
-  }, "รูปสลิปที่แนบไว้ในรายจ่ายทั่วไป/รายได้พิเศษกินพื้นที่เยอะ ถ้าเจอ \"บันทึกไม่สำเร็จ: พื้นที่เต็ม\" ให้ลองล้างรูปเก่าดู — ลบเฉพาะรูป ตัวเลข/วันที่/โน้ตของรายการยังอยู่ครบ แค่รูปหายไป"), React.createElement("div", {
-    className: "mb-2.5 flex gap-1.5"
-  }, React.createElement("button", {
-    type: "button",
-    onClick: () => setClearReceiptsScope("30d"),
-    className: "flex-1 rounded-lg py-1.5 text-[11px] font-medium",
-    style: {
-      background: clearReceiptsScope === "30d" ? C.blue : C.bgSoft,
-      color: clearReceiptsScope === "30d" ? "#FFFFFF" : C.textFaint
-    }
-  }, "เก่ากว่า 30 วัน"), React.createElement("button", {
-    type: "button",
-    onClick: () => setClearReceiptsScope("90d"),
-    className: "flex-1 rounded-lg py-1.5 text-[11px] font-medium",
-    style: {
-      background: clearReceiptsScope === "90d" ? C.blue : C.bgSoft,
-      color: clearReceiptsScope === "90d" ? "#FFFFFF" : C.textFaint
-    }
-  }, "เก่ากว่า 90 วัน"), React.createElement("button", {
-    type: "button",
-    onClick: () => setClearReceiptsScope("all"),
-    className: "flex-1 rounded-lg py-1.5 text-[11px] font-medium",
-    style: {
-      background: clearReceiptsScope === "all" ? C.red : C.bgSoft,
-      color: clearReceiptsScope === "all" ? "#FFFFFF" : C.textFaint
-    }
-  }, "ทั้งหมด")), !showClearReceiptsConfirm ? React.createElement("button", {
-    onClick: () => setShowClearReceiptsConfirm(true),
-    className: "w-full rounded-lg py-2 text-xs font-semibold",
-    style: {
-      background: C.redDim,
-      color: C.red
-    },
-    type: "button"
-  }, "ล้างรูปสลิป") : React.createElement("div", {
-    className: "flex flex-col gap-2 rounded-lg p-3",
-    style: {
-      background: C.redDim
-    }
-  }, React.createElement("p", {
-    className: "text-[11px] leading-relaxed",
-    style: {
-      color: C.red
-    }
-  }, "ยืนยันลบรูปสลิป", clearReceiptsScope === "30d" ? "ที่เก่ากว่า 30 วัน" : clearReceiptsScope === "90d" ? "ที่เก่ากว่า 90 วัน" : "ทั้งหมด", " ออก? กู้คืนไม่ได้ (แนะนำสำรองข้อมูลก่อนถ้ายังไม่ได้กด)"), React.createElement("div", {
-    className: "flex gap-2"
-  }, React.createElement("button", {
-    onClick: () => setShowClearReceiptsConfirm(false),
-    className: "flex-1 rounded-lg py-2 text-xs font-medium",
-    style: {
-      background: C.panel,
-      color: C.textMuted
-    },
-    type: "button"
-  }, "ยกเลิก"), React.createElement("button", {
-    onClick: () => {
-      clearOldReceiptImages(clearReceiptsScope);
-      setShowClearReceiptsConfirm(false);
-    },
-    className: "flex-1 rounded-lg py-2 text-xs font-semibold",
-    style: {
-      background: C.red,
-      color: "#FFFFFF"
-    },
-    type: "button"
-  }, "ยืนยันลบรูป")))), React.createElement("div", {
     className: "mt-4"
   }, React.createElement("button", {
     onClick: () => setShowHistory(s => !s),
@@ -8126,7 +7982,154 @@ function GrabProfitMeter() {
       opacity: !instName.trim() || !instTotalAmount || !instMonths ? 0.5 : 1
     },
     type: "button"
-  }, "บันทึกรายการผ่อน"))))), activeTab === "daily" && React.createElement(React.Fragment, null, React.createElement("div", {
+  }, "บันทึกรายการผ่อน"))))), React.createElement("div", {
+    className: "mt-6 rounded-xl p-3.5",
+    style: {
+      background: C.panel,
+      border: `1px solid ${C.hairline}`
+    }
+  }, React.createElement("div", {
+    className: "mb-2 text-xs font-medium",
+    style: {
+      color: C.textMuted
+    }
+  }, "สำรอง / กู้คืนข้อมูล"), React.createElement("p", {
+    className: "mb-2.5 text-[13px] leading-relaxed",
+    style: {
+      color: C.textFaint
+    }
+  }, "ข้อมูลถูกเก็บไว้ในเบราว์เซอร์เครื่องนี้เท่านั้น แนะนำให้กดสำรองเก็บไว้เป็นระยะ กันข้อมูลหายตอนล้างแอปหรือเปลี่ยนเครื่อง"), React.createElement("div", {
+    className: "grid grid-cols-2 gap-2"
+  }, React.createElement("button", {
+    onClick: exportData,
+    disabled: entries.length === 0,
+    className: "flex items-center justify-center gap-1.5 rounded-lg py-2 text-xs font-medium",
+    style: {
+      background: C.bgSoft,
+      color: entries.length === 0 ? C.textFaint : C.text,
+      border: `1px solid ${C.hairline}`,
+      opacity: entries.length === 0 ? 0.5 : 1
+    }
+  }, React.createElement(Icon, {
+    name: "download",
+    size: 13
+  }), " สำรอง (JSON)"), React.createElement("button", {
+    onClick: () => importInputRef.current?.click(),
+    className: "flex items-center justify-center gap-1.5 rounded-lg py-2 text-xs font-medium",
+    style: {
+      background: C.bgSoft,
+      color: C.text,
+      border: `1px solid ${C.hairline}`
+    }
+  }, React.createElement(Icon, {
+    name: "upload",
+    size: 13
+  }), " นำเข้าข้อมูล"), React.createElement("input", {
+    ref: importInputRef,
+    type: "file",
+    accept: "application/json",
+    className: "hidden",
+    onChange: e => handleImportFile(e.target.files?.[0])
+  }), React.createElement("button", {
+    onClick: exportExcel,
+    disabled: entries.length === 0,
+    className: "col-span-2 flex items-center justify-center gap-1.5 rounded-lg py-2 text-xs font-medium",
+    style: {
+      background: entries.length === 0 ? C.bgSoft : C.greenDim,
+      color: entries.length === 0 ? C.textFaint : C.greenDeep,
+      border: `1px solid ${entries.length === 0 ? C.hairline : "rgba(0,177,79,0.3)"}`,
+      opacity: entries.length === 0 ? 0.5 : 1
+    }
+  }, React.createElement(Icon, {
+    name: "sheet",
+    size: 13
+  }), " ส่งออกเป็น Excel (.xlsx)")), importMsg && React.createElement("div", {
+    className: "mt-2 text-[13px]",
+    style: {
+      color: importMsg.startsWith("นำเข้าสำเร็จ") ? C.green : C.red
+    }
+  }, importMsg)), React.createElement("div", {
+    className: "mt-4 rounded-xl p-3.5",
+    style: {
+      background: C.panel,
+      border: `1px solid ${C.hairline}`
+    }
+  }, React.createElement("div", {
+    className: "mb-2 text-xs font-medium",
+    style: {
+      color: C.textMuted
+    }
+  }, "🧹 ล้างรูปสลิปเก่า (คืนพื้นที่จัดเก็บ)"), React.createElement("p", {
+    className: "mb-2.5 text-[13px] leading-relaxed",
+    style: {
+      color: C.textFaint
+    }
+  }, "รูปสลิปที่แนบไว้ในรายจ่ายทั่วไป/รายได้พิเศษกินพื้นที่เยอะ ถ้าเจอ \"บันทึกไม่สำเร็จ: พื้นที่เต็ม\" ให้ลองล้างรูปเก่าดู — ลบเฉพาะรูป ตัวเลข/วันที่/โน้ตของรายการยังอยู่ครบ แค่รูปหายไป"), React.createElement("div", {
+    className: "mb-2.5 flex gap-1.5"
+  }, React.createElement("button", {
+    type: "button",
+    onClick: () => setClearReceiptsScope("30d"),
+    className: "flex-1 rounded-lg py-1.5 text-[11px] font-medium",
+    style: {
+      background: clearReceiptsScope === "30d" ? C.blue : C.bgSoft,
+      color: clearReceiptsScope === "30d" ? "#FFFFFF" : C.textFaint
+    }
+  }, "เก่ากว่า 30 วัน"), React.createElement("button", {
+    type: "button",
+    onClick: () => setClearReceiptsScope("90d"),
+    className: "flex-1 rounded-lg py-1.5 text-[11px] font-medium",
+    style: {
+      background: clearReceiptsScope === "90d" ? C.blue : C.bgSoft,
+      color: clearReceiptsScope === "90d" ? "#FFFFFF" : C.textFaint
+    }
+  }, "เก่ากว่า 90 วัน"), React.createElement("button", {
+    type: "button",
+    onClick: () => setClearReceiptsScope("all"),
+    className: "flex-1 rounded-lg py-1.5 text-[11px] font-medium",
+    style: {
+      background: clearReceiptsScope === "all" ? C.red : C.bgSoft,
+      color: clearReceiptsScope === "all" ? "#FFFFFF" : C.textFaint
+    }
+  }, "ทั้งหมด")), !showClearReceiptsConfirm ? React.createElement("button", {
+    onClick: () => setShowClearReceiptsConfirm(true),
+    className: "w-full rounded-lg py-2 text-xs font-semibold",
+    style: {
+      background: C.redDim,
+      color: C.red
+    },
+    type: "button"
+  }, "ล้างรูปสลิป") : React.createElement("div", {
+    className: "flex flex-col gap-2 rounded-lg p-3",
+    style: {
+      background: C.redDim
+    }
+  }, React.createElement("p", {
+    className: "text-[11px] leading-relaxed",
+    style: {
+      color: C.red
+    }
+  }, "ยืนยันลบรูปสลิป", clearReceiptsScope === "30d" ? "ที่เก่ากว่า 30 วัน" : clearReceiptsScope === "90d" ? "ที่เก่ากว่า 90 วัน" : "ทั้งหมด", " ออก? กู้คืนไม่ได้ (แนะนำสำรองข้อมูลก่อนถ้ายังไม่ได้กด)"), React.createElement("div", {
+    className: "flex gap-2"
+  }, React.createElement("button", {
+    onClick: () => setShowClearReceiptsConfirm(false),
+    className: "flex-1 rounded-lg py-2 text-xs font-medium",
+    style: {
+      background: C.panel,
+      color: C.textMuted
+    },
+    type: "button"
+  }, "ยกเลิก"), React.createElement("button", {
+    onClick: () => {
+      clearOldReceiptImages(clearReceiptsScope);
+      setShowClearReceiptsConfirm(false);
+    },
+    className: "flex-1 rounded-lg py-2 text-xs font-semibold",
+    style: {
+      background: C.red,
+      color: "#FFFFFF"
+    },
+    type: "button"
+  }, "ยืนยันลบรูป")))), activeTab === "daily" && React.createElement(React.Fragment, null, React.createElement("div", {
     className: "mb-4 rounded-xl p-3.5",
     style: {
       background: C.panel,
@@ -10747,10 +10750,11 @@ function GrabProfitMeter() {
     }
   }, tip))))), !chatOpen && React.createElement("button", {
     onClick: () => setChatOpen(true),
-    className: "fixed bottom-5 right-5 z-40 flex h-14 w-14 items-center justify-center rounded-full shadow-lg",
+    className: "fixed right-5 z-40 flex h-14 w-14 items-center justify-center rounded-full shadow-lg",
     style: {
       background: C.green,
-      boxShadow: "0 4px 14px rgba(0,177,79,0.4)"
+      boxShadow: "0 4px 14px rgba(0,177,79,0.4)",
+      bottom: "6rem"
     },
     type: "button",
     "aria-label": "ถามข้อมูล"
