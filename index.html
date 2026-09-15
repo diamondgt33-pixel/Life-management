@@ -1646,6 +1646,7 @@ function GrabProfitMeter() {
   const [reconcileCashAmount, setReconcileCashAmount] = useState(0);
   const [showReconcileConfirm, setShowReconcileConfirm] = useState(false);
   const [showResetPoolConfirm, setShowResetPoolConfirm] = useState(false);
+  const [showSpentBreakdown, setShowSpentBreakdown] = useState(false);
   const [showResetToMonthConfirm, setShowResetToMonthConfirm] = useState(false);
   const [manualUnallocatedInput, setManualUnallocatedInput] = useState("");
   const [showExtraIncomeForm, setShowExtraIncomeForm] = useState(false);
@@ -2145,16 +2146,28 @@ function GrabProfitMeter() {
     let centralFixedExpenses = 0;
     let parkedFixedExpenses = 0;
     let thisMonthFixedSpent = 0;
+    const thisMonthSpentBreakdown = [];
     Object.entries(paidExpenses).forEach(([month, ids]) => {
-      ids.forEach(id => {
+      const uniqueIds = [...new Set(ids)];
+      uniqueIds.forEach(id => {
         const item = fixedExpenses.find(e => e.id === id);
         if (!item) return;
-        if (item.walletId && item.walletId !== "central") {
-          parkedFixedExpenses += item.amount || 0;
-        } else {
-          centralFixedExpenses += item.amount || 0;
+        const isDebtWalletPayment = item.linkedDebtId && item.walletId && item.walletId !== "central";
+        if (!isDebtWalletPayment) {
+          if (item.walletId && item.walletId !== "central") {
+            parkedFixedExpenses += item.amount || 0;
+          } else {
+            centralFixedExpenses += item.amount || 0;
+          }
         }
-        if (month === thisMonth) thisMonthFixedSpent += item.amount || 0;
+        if (month === thisMonth) {
+          thisMonthFixedSpent += item.amount || 0;
+          thisMonthSpentBreakdown.push({
+            id,
+            name: item.name,
+            amount: item.amount || 0
+          });
+        }
       });
     });
     const monthTransferred = manualTransfers + parkedFixedExpenses;
@@ -2170,7 +2183,25 @@ function GrabProfitMeter() {
     const thisMonthSpent = Math.round((thisMonthFixedSpent + thisMonthCentralDaily + thisMonthCentralMaintenance + thisMonthTransfers) * 100) / 100;
     const oldMoneyBeforeThisMonth = Math.round((rawUnallocated - walletPoolAdjustment - thisMonthProfit - thisMonthExtraIncome - thisMonthTourProfit + thisMonthSpent) * 100) / 100;
     const thisMonthIncomeUntouched = oldMoneyBeforeThisMonth >= thisMonthSpent;
-    const thisMonthIncomeSpent = thisMonthIncomeUntouched ? 0 : Math.round((thisMonthSpent - oldMoneyBeforeThisMonth) * 100) / 100;
+    const shortfallAfterOldMoney = Math.max(0, Math.round((thisMonthSpent - oldMoneyBeforeThisMonth) * 100) / 100);
+    const thisMonthIncomeSpent = Math.min(shortfallAfterOldMoney, thisMonthProfit);
+    const stillShort = Math.max(0, Math.round((shortfallAfterOldMoney - thisMonthProfit) * 100) / 100);
+    const fullBreakdown = [...thisMonthSpentBreakdown];
+    if (thisMonthCentralDaily > 0) fullBreakdown.push({
+      id: "_daily",
+      name: "รายจ่ายทั่วไป (หักจากกระเป๋ากลาง)",
+      amount: Math.round(thisMonthCentralDaily * 100) / 100
+    });
+    if (thisMonthCentralMaintenance > 0) fullBreakdown.push({
+      id: "_maint",
+      name: "ค่าซ่อมบำรุง (หักจากกระเป๋ากลาง)",
+      amount: Math.round(thisMonthCentralMaintenance * 100) / 100
+    });
+    if (thisMonthTransfers > 0) fullBreakdown.push({
+      id: "_transfer",
+      name: "โอนเงินเข้ากระเป๋า",
+      amount: Math.round(thisMonthTransfers * 100) / 100
+    });
     return {
       ym: thisMonth,
       lifetimeProfit,
@@ -2184,7 +2215,9 @@ function GrabProfitMeter() {
       thisMonthSpent,
       thisMonthProfit,
       thisMonthIncomeUntouched,
-      thisMonthIncomeSpent
+      thisMonthIncomeSpent,
+      stillShort,
+      thisMonthSpentBreakdown: fullBreakdown
     };
   }, [entries, extraIncome, tourTrips, walletTransfers, dailyExpenses, maintenanceRecords, paidExpenses, fixedExpenses, walletPoolAdjustment]);
   const autoCreditDebts = useMemo(() => {
@@ -2435,7 +2468,8 @@ function GrabProfitMeter() {
     }
     const item = fixedExpenses.find(e => e.id === expenseId);
     if (item && item.walletId && item.walletId !== "central") {
-      const delta = wasPaid ? -(item.amount || 0) : item.amount || 0;
+      const isDebtPayment = !!item.linkedDebtId;
+      const delta = isDebtPayment ? wasPaid ? item.amount || 0 : -(item.amount || 0) : wasPaid ? -(item.amount || 0) : item.amount || 0;
       await adjustWalletBalance(item.walletId, delta);
     }
     if (item && item.linkedDebtId) {
@@ -8065,7 +8099,12 @@ function GrabProfitMeter() {
       name: "trash",
       size: 14,
       color: C.textFaint
-    }))), wallets.length > 0 && React.createElement("div", {
+    }))), item.linkedDebtId && React.createElement("p", {
+      className: "pl-7 text-[10px]",
+      style: {
+        color: C.blue
+      }
+    }, "🔗 ผูกกับรายการหนี้สิน — พอติ๊กจ่ายแล้ว ยอดหนี้จะลดลงให้อัตโนมัติ"), wallets.length > 0 && React.createElement("div", {
       className: "flex flex-wrap items-center gap-1.5 pl-7"
     }, React.createElement("span", {
       className: "text-[10px]",
@@ -8091,13 +8130,13 @@ function GrabProfitMeter() {
         color: item.walletId === w.id ? "#FFFFFF" : C.textFaint,
         border: `1px solid ${C.hairline}`
       }
-    }, "👛 พักไว้ที่ ", w.name))));
+    }, item.linkedDebtId ? "💸 จ่ายจาก " : "👛 พักไว้ที่ ", w.name))));
   })), React.createElement("p", {
     className: "mt-2 text-[11px]",
     style: {
       color: C.textFaint
     }
-  }, "กดช่องสี่เหลี่ยมด้านหน้าเพื่อทำเครื่องหมายว่าจ่ายรายการนั้นของเดือน ", monthLabelThai(fixedExpViewMonth), " แล้ว (แยกจำสถานะทุกเดือน)", wallets.length > 0 && " — รายการไหนตั้งเป็น \"พักไว้ที่กระเป๋า\" เงินจะย้ายเข้ากระเป๋านั้นแทนการตัดใช้ทันที เผื่อไว้ใช้ทีหลัง"), React.createElement("button", {
+  }, "กดช่องสี่เหลี่ยมด้านหน้าเพื่อทำเครื่องหมายว่าจ่ายรายการนั้นของเดือน ", monthLabelThai(fixedExpViewMonth), " แล้ว (แยกจำสถานะทุกเดือน)", wallets.length > 0 && " — รายการทั่วไปถ้าตั้งเป็น \"พักไว้ที่กระเป๋า\" เงินจะย้ายเข้ากระเป๋านั้นแทนการตัดใช้ทันที เผื่อไว้ใช้ทีหลัง ส่วนรายการที่ผูกกับหนี้สิน (มีป้าย 🔗) ถ้าเลือกกระเป๋า จะเป็น \"จ่ายจากกระเป๋านั้นจริงๆ\" คือหักยอดออกจากกระเป๋าเลย"), React.createElement("button", {
     onClick: addExpense,
     className: "mt-2.5 w-full rounded-lg py-2 text-xs font-medium",
     style: {
@@ -8375,7 +8414,33 @@ function GrabProfitMeter() {
     style: {
       color: walletPool.thisMonthIncomeUntouched ? C.greenDeep : "#92400E"
     }
-  }, walletPool.thisMonthIncomeUntouched ? `✅ บิลเดือนนี้ (${thb(walletPool.thisMonthSpent)} บาท) จ่ายจากเงินเก่าที่สะสมไว้ก่อนเดือนนี้ทั้งหมด — กำไรเดือนนี้ (${thb(walletPool.thisMonthProfit)} บาท) ยังไม่ถูกแตะเลย เก็บไว้ใช้เดือนหน้าได้เต็มๆ` : `⚠️ เงินเก่าก่อนเดือนนี้มีไม่พอจ่ายบิลเดือนนี้ (${thb(walletPool.thisMonthSpent)} บาท) เลยเริ่มดึงกำไรเดือนนี้มาโปะแล้ว ${thb(walletPool.thisMonthIncomeSpent)} บาท (จากที่หาได้ ${thb(walletPool.thisMonthProfit)} บาท) เหลือกำไรเดือนนี้ที่ยังไม่ถูกแตะ ${thb(Math.max(0, walletPool.thisMonthProfit - walletPool.thisMonthIncomeSpent))} บาท`)), !showWalletManager && wallets.length > 0 && React.createElement("div", {
+  }, walletPool.thisMonthIncomeUntouched ? `✅ บิลเดือนนี้ (${thb(walletPool.thisMonthSpent)} บาท) จ่ายจากเงินเก่าที่สะสมไว้ก่อนเดือนนี้ทั้งหมด — กำไรเดือนนี้ (${thb(walletPool.thisMonthProfit)} บาท) ยังไม่ถูกแตะเลย เก็บไว้ใช้เดือนหน้าได้เต็มๆ` : walletPool.stillShort > 0 ? `⚠️ เงินเก่า + กำไรเดือนนี้ทั้งหมด (${thb(walletPool.thisMonthProfit)} บาท) รวมกันยังไม่พอจ่ายบิลเดือนนี้ (${thb(walletPool.thisMonthSpent)} บาท) — ยังขาดอยู่ ${thb(walletPool.stillShort)} บาท กำไรเดือนนี้ถูกใช้ไปหมดแล้ว` : `⚠️ เงินเก่าก่อนเดือนนี้มีไม่พอจ่ายบิลเดือนนี้ (${thb(walletPool.thisMonthSpent)} บาท) เลยเริ่มดึงกำไรเดือนนี้มาโปะแล้ว ${thb(walletPool.thisMonthIncomeSpent)} บาท (จากที่หาได้ ${thb(walletPool.thisMonthProfit)} บาท) เหลือกำไรเดือนนี้ที่ยังไม่ถูกแตะ ${thb(Math.max(0, walletPool.thisMonthProfit - walletPool.thisMonthIncomeSpent))} บาท`), walletPool.thisMonthSpentBreakdown.length > 0 && React.createElement("div", {
+    className: "mt-2"
+  }, React.createElement("button", {
+    type: "button",
+    onClick: () => setShowSpentBreakdown(v => !v),
+    className: "text-[11px] font-medium underline",
+    style: {
+      color: walletPool.thisMonthIncomeUntouched ? C.greenDeep : "#92400E"
+    }
+  }, showSpentBreakdown ? "ซ่อนรายละเอียด" : `ดูรายละเอียด (${walletPool.thisMonthSpentBreakdown.length} รายการ)`), showSpentBreakdown && React.createElement("div", {
+    className: "mt-1.5 flex flex-col gap-1 rounded-lg p-2",
+    style: {
+      background: "rgba(255,255,255,0.5)"
+    }
+  }, [...walletPool.thisMonthSpentBreakdown].sort((a, b) => b.amount - a.amount).map(b => React.createElement("div", {
+    key: b.id,
+    className: "flex items-center justify-between text-[11px]"
+  }, React.createElement("span", {
+    style: {
+      color: "#374151"
+    }
+  }, b.name), React.createElement("span", {
+    style: {
+      color: "#374151",
+      fontFamily: "'JetBrains Mono', monospace"
+    }
+  }, thb(b.amount), " ฿")))))), !showWalletManager && wallets.length > 0 && React.createElement("div", {
     className: "flex flex-col gap-1.5"
   }, wallets.map(w => React.createElement("div", {
     key: w.id,
