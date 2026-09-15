@@ -898,6 +898,18 @@ const DEFAULT_EXPENSES = [{
   amount: 3000
 }];
 const MAINTENANCE_TYPES = ["เช็คระยะ", "เปลี่ยนยาง", "เปลี่ยนน้ำมันเครื่อง", "เปลี่ยนน้ำมันเกียร์", "ล้างรถ", "ซ่อม", "เปลี่ยนกรองแอร์", "เปลี่ยนกรองอากาศ", "อื่นๆ"];
+const ASSET_CATEGORIES = ["หุ้น", "ทอง", "กองทุน", "คริปโต", "อสังหาริมทรัพย์", "ประกันสะสมทรัพย์", "อื่นๆ"];
+const DEBT_CATEGORIES = ["บัตรเครดิต", "สินเชื่อส่วนบุคคล", "ผ่อนรถ", "ผ่อนบ้าน", "หนี้นอกระบบ", "อื่นๆ"];
+const ASSET_CATEGORY_COLORS = {
+  "เงินสด/บัญชี": "#00B14F",
+  "หุ้น": "#2F80ED",
+  "ทอง": "#F59E0B",
+  "กองทุน": "#8B5CF6",
+  "คริปโต": "#EC4899",
+  "อสังหาริมทรัพย์": "#0EA5A5",
+  "ประกันสะสมทรัพย์": "#4FD98A",
+  "อื่นๆ": "#94A3B8"
+};
 const TURBO_SLOTS = ["05:00–06:00", "06:00–07:00", "07:00–08:00", "08:00–09:00", "09:00–10:00", "10:00–11:00", "11:00–12:00", "12:00–13:00", "13:00–14:00", "14:00–15:00", "15:00–16:00", "16:00–17:00", "17:00–18:00", "18:00–19:00", "19:00–20:00", "20:00–21:00", "21:00–22:00", "22:00–23:00", "23:00–00:00"];
 const DEFAULT_TURBO_TIERS = [{
   rounds: 5,
@@ -1544,6 +1556,7 @@ function GrabProfitMeter() {
   const [monthlyGoal, setMonthlyGoal] = useState(0);
   const [workDays, setWorkDays] = useState([0, 1, 2, 3, 4, 5, 6]);
   const [chatOpen, setChatOpen] = useState(false);
+  const [viewportBottomOffset, setViewportBottomOffset] = useState(0);
   const [chatInput, setChatInput] = useState("");
   const [chatMessages, setChatMessages] = useState([{
     role: "bot",
@@ -1570,6 +1583,14 @@ function GrabProfitMeter() {
   const [dailyExpenses, setDailyExpenses] = useState([]);
   const [extraIncome, setExtraIncome] = useState([]);
   const [wallets, setWallets] = useState([]);
+  const [assets, setAssets] = useState([]);
+  const [debts, setDebts] = useState([]);
+  const [newAssetName, setNewAssetName] = useState("");
+  const [newAssetCategory, setNewAssetCategory] = useState("หุ้น");
+  const [newAssetValue, setNewAssetValue] = useState(0);
+  const [newDebtName, setNewDebtName] = useState("");
+  const [newDebtCategory, setNewDebtCategory] = useState("บัตรเครดิต");
+  const [newDebtValue, setNewDebtValue] = useState(0);
   const [tourPackages, setTourPackages] = useState([]);
   const [tourTrips, setTourTrips] = useState([]);
   const [showTourPackageManager, setShowTourPackageManager] = useState(false);
@@ -1680,6 +1701,21 @@ function GrabProfitMeter() {
     const t = setInterval(() => setNow(new Date()), 1000);
     return () => clearInterval(t);
   }, []);
+  useEffect(() => {
+    const vv = window.visualViewport;
+    if (!vv) return;
+    const updateOffset = () => {
+      const gap = window.innerHeight - vv.height - vv.offsetTop;
+      setViewportBottomOffset(Math.max(0, Math.round(gap)));
+    };
+    updateOffset();
+    vv.addEventListener("resize", updateOffset);
+    vv.addEventListener("scroll", updateOffset);
+    return () => {
+      vv.removeEventListener("resize", updateOffset);
+      vv.removeEventListener("scroll", updateOffset);
+    };
+  }, []);
   const shiftSummaryDate = dir => {
     const d = new Date(summaryDate + "T00:00:00");
     if (summaryPeriod === "day") d.setDate(d.getDate() + dir);else if (summaryPeriod === "week") d.setDate(d.getDate() + dir * 7);else if (summaryPeriod === "month") d.setMonth(d.getMonth() + dir);else if (summaryPeriod === "year") d.setFullYear(d.getFullYear() + dir);
@@ -1721,6 +1757,14 @@ function GrabProfitMeter() {
       try {
         const wl = await window.storage.get("wallets", false);
         if (wl && wl.value) setWallets(JSON.parse(wl.value));
+      } catch (e) {}
+      try {
+        const as = await window.storage.get("assets", false);
+        if (as && as.value) setAssets(JSON.parse(as.value));
+      } catch (e) {}
+      try {
+        const db = await window.storage.get("debts", false);
+        if (db && db.value) setDebts(JSON.parse(db.value));
       } catch (e) {}
       try {
         const tp = await window.storage.get("tour-packages", false);
@@ -2143,6 +2187,29 @@ function GrabProfitMeter() {
       thisMonthIncomeSpent
     };
   }, [entries, extraIncome, tourTrips, walletTransfers, dailyExpenses, maintenanceRecords, paidExpenses, fixedExpenses, walletPoolAdjustment]);
+  const netWorthSummary = useMemo(() => {
+    const walletsTotal = Math.round(wallets.reduce((a, w) => a + (w.balance || 0), 0) * 100) / 100;
+    const cashTotal = Math.round((walletsTotal + (walletPool.unallocated || 0)) * 100) / 100;
+    const assetsTotal = Math.round(assets.reduce((a, x) => a + (x.value || 0), 0) * 100) / 100;
+    const debtsTotal = Math.round(debts.reduce((a, x) => a + (x.value || 0), 0) * 100) / 100;
+    const grossAssets = Math.round((cashTotal + assetsTotal) * 100) / 100;
+    const netWorth = Math.round((grossAssets - debtsTotal) * 100) / 100;
+    const byCategory = {};
+    if (cashTotal > 0) byCategory["เงินสด/บัญชี"] = cashTotal;
+    assets.forEach(a => {
+      byCategory[a.category] = Math.round(((byCategory[a.category] || 0) + (a.value || 0)) * 100) / 100;
+    });
+    const debtRatio = grossAssets > 0 ? Math.round(debtsTotal / grossAssets * 1000) / 10 : 0;
+    return {
+      cashTotal,
+      assetsTotal,
+      debtsTotal,
+      grossAssets,
+      netWorth,
+      byCategory,
+      debtRatio
+    };
+  }, [wallets, walletPool.unallocated, assets, debts]);
   const addVehicle = () => {
     const id = `veh-${Date.now()}`;
     setVehicles(prev => [...prev, {
@@ -2822,6 +2889,96 @@ function GrabProfitMeter() {
     }
     if (dailyExpWalletId === id) setDailyExpWalletId("");
   };
+  const addAsset = async () => {
+    if (!newAssetName.trim() || !newAssetValue || newAssetValue <= 0) return;
+    setSaveError("");
+    const asset = {
+      id: `asset-${Date.now()}`,
+      name: newAssetName.trim(),
+      category: newAssetCategory,
+      value: newAssetValue
+    };
+    const latest = await readLatestArray("assets", assets);
+    const next = [...latest, asset];
+    setAssets(next);
+    try {
+      await window.storage.set("assets", JSON.stringify(next), false);
+    } catch (e) {
+      reportSaveError(e);
+    }
+    setNewAssetName("");
+    setNewAssetValue(0);
+  };
+  const updateAsset = async (id, field, value) => {
+    setSaveError("");
+    const latest = await readLatestArray("assets", assets);
+    const next = latest.map(a => a.id === id ? {
+      ...a,
+      [field]: value
+    } : a);
+    setAssets(next);
+    try {
+      await window.storage.set("assets", JSON.stringify(next), false);
+    } catch (e) {
+      reportSaveError(e);
+    }
+  };
+  const deleteAsset = async id => {
+    setSaveError("");
+    const latest = await readLatestArray("assets", assets);
+    const next = latest.filter(a => a.id !== id);
+    setAssets(next);
+    try {
+      await window.storage.set("assets", JSON.stringify(next), false);
+    } catch (e) {
+      reportSaveError(e);
+    }
+  };
+  const addDebt = async () => {
+    if (!newDebtName.trim() || !newDebtValue || newDebtValue <= 0) return;
+    setSaveError("");
+    const debt = {
+      id: `debt-${Date.now()}`,
+      name: newDebtName.trim(),
+      category: newDebtCategory,
+      value: newDebtValue
+    };
+    const latest = await readLatestArray("debts", debts);
+    const next = [...latest, debt];
+    setDebts(next);
+    try {
+      await window.storage.set("debts", JSON.stringify(next), false);
+    } catch (e) {
+      reportSaveError(e);
+    }
+    setNewDebtName("");
+    setNewDebtValue(0);
+  };
+  const updateDebt = async (id, field, value) => {
+    setSaveError("");
+    const latest = await readLatestArray("debts", debts);
+    const next = latest.map(d => d.id === id ? {
+      ...d,
+      [field]: value
+    } : d);
+    setDebts(next);
+    try {
+      await window.storage.set("debts", JSON.stringify(next), false);
+    } catch (e) {
+      reportSaveError(e);
+    }
+  };
+  const deleteDebt = async id => {
+    setSaveError("");
+    const latest = await readLatestArray("debts", debts);
+    const next = latest.filter(d => d.id !== id);
+    setDebts(next);
+    try {
+      await window.storage.set("debts", JSON.stringify(next), false);
+    } catch (e) {
+      reportSaveError(e);
+    }
+  };
   const adjustWalletBalance = async (walletId, delta) => {
     if (!walletId || !delta) return;
     const latest = await readLatestArray("wallets", wallets);
@@ -3150,6 +3307,8 @@ function GrabProfitMeter() {
       extraIncome,
       paidExpenses,
       wallets,
+      assets,
+      debts,
       walletTransfers,
       walletMoveLogs,
       walletPoolAdjustment,
@@ -3254,6 +3413,24 @@ function GrabProfitMeter() {
     if (walletMoveRows.length > 0) {
       window.XLSX.utils.book_append_sheet(wb, window.XLSX.utils.json_to_sheet(walletMoveRows), "โอนเงินระหว่างกระเป๋า");
     }
+    const netWorthRows = [{
+      รายการ: "เงินสด/บัญชี (รวมทุกกระเป๋า)",
+      ประเภท: "สินทรัพย์",
+      มูลค่า: netWorthSummary.cashTotal
+    }, ...assets.map(a => ({
+      รายการ: a.name,
+      ประเภท: a.category,
+      มูลค่า: a.value || 0
+    })), ...debts.map(d => ({
+      รายการ: d.name,
+      ประเภท: `หนี้สิน: ${d.category}`,
+      มูลค่า: -(d.value || 0)
+    })), {
+      รายการ: "มูลค่าทรัพย์สินสุทธิ",
+      ประเภท: "สรุป",
+      มูลค่า: netWorthSummary.netWorth
+    }];
+    window.XLSX.utils.book_append_sheet(wb, window.XLSX.utils.json_to_sheet(netWorthRows), "ทรัพย์สินสุทธิ");
     const walletRows = wallets.map(w => ({
       กระเป๋า: w.name,
       ยอดคงเหลือ: w.balance || 0
@@ -3361,6 +3538,18 @@ function GrabProfitMeter() {
           setWallets(merged);
           await window.storage.set("wallets", JSON.stringify(merged), false);
           restoredParts.push("กระเป๋าเงิน");
+        }
+        if (Array.isArray(parsed.assets)) {
+          const merged = mergeById(assets, parsed.assets);
+          setAssets(merged);
+          await window.storage.set("assets", JSON.stringify(merged), false);
+          restoredParts.push("ทรัพย์สิน");
+        }
+        if (Array.isArray(parsed.debts)) {
+          const merged = mergeById(debts, parsed.debts);
+          setDebts(merged);
+          await window.storage.set("debts", JSON.stringify(merged), false);
+          restoredParts.push("หนี้สิน");
         }
         if (Array.isArray(parsed.walletTransfers)) {
           const merged = mergeById(walletTransfers, parsed.walletTransfers);
@@ -4404,7 +4593,7 @@ function GrabProfitMeter() {
       border: `1px solid ${C.hairline}`,
       left: "1rem",
       right: "1rem",
-      bottom: "1rem"
+      bottom: `calc(1rem + ${viewportBottomOffset}px)`
     }
   }, React.createElement("button", {
     onClick: () => setActiveTab("income"),
@@ -4438,7 +4627,15 @@ function GrabProfitMeter() {
       color: activeTab === "tour" ? "#FFFFFF" : C.textMuted
     },
     type: "button"
-  }, "ไพร์เวททัว")), activeTab === "income" && React.createElement(React.Fragment, null, React.createElement("div", {
+  }, "ไพร์เวททัว"), React.createElement("button", {
+    onClick: () => setActiveTab("assets"),
+    className: "flex-1 shrink-0 whitespace-nowrap rounded-lg px-2 py-2 text-[13px] font-medium transition-colors",
+    style: {
+      background: activeTab === "assets" ? C.green : "transparent",
+      color: activeTab === "assets" ? "#FFFFFF" : C.textMuted
+    },
+    type: "button"
+  }, "ทรัพย์สิน")), activeTab === "income" && React.createElement(React.Fragment, null, React.createElement("div", {
     className: "rounded-xl p-3.5 mb-3",
     style: {
       background: C.panel,
@@ -10000,7 +10197,337 @@ function GrabProfitMeter() {
         }
       }, React.createElement("span", null, "ราคา ", thb(t.price), " ฿"), t.totalCosts > 0 && React.createElement("span", null, "ต้นทุน ", thb(t.totalCosts), " ฿"), t.fuelCost > 0 && React.createElement("span", null, "ค่าน้ำมัน/ไฟ ", thb(t.fuelCost), " ฿"))))));
     }));
-  })()))), viewingReceipt && React.createElement("div", {
+  })()))), activeTab === "assets" && React.createElement(React.Fragment, null, React.createElement("div", {
+    className: "rounded-xl p-3.5 mb-3",
+    style: {
+      background: C.panel,
+      border: `1px solid ${C.hairline}`,
+      borderLeft: `3px solid ${C.green}`
+    }
+  }, React.createElement("div", {
+    className: "mb-1 text-xs",
+    style: {
+      color: C.textFaint
+    }
+  }, "มูลค่าทรัพย์สินสุทธิ (Net Worth)"), React.createElement("div", {
+    className: "text-2xl font-bold leading-none",
+    style: {
+      color: netWorthSummary.netWorth >= 0 ? C.green : C.red,
+      fontFamily: "'JetBrains Mono', monospace"
+    }
+  }, thb(netWorthSummary.netWorth), " ", React.createElement("span", {
+    className: "text-sm",
+    style: {
+      color: C.textFaint
+    }
+  }, "฿")), React.createElement("div", {
+    className: "mt-3 grid grid-cols-2 gap-2 text-center"
+  }, React.createElement("div", {
+    className: "rounded-lg p-2",
+    style: {
+      background: C.bgSoft
+    }
+  }, React.createElement("div", {
+    className: "text-[10px]",
+    style: {
+      color: C.textFaint
+    }
+  }, "สินทรัพย์รวม"), React.createElement("div", {
+    className: "text-sm font-semibold",
+    style: {
+      color: C.green,
+      fontFamily: "'JetBrains Mono', monospace"
+    }
+  }, thb(netWorthSummary.grossAssets), " ฿")), React.createElement("div", {
+    className: "rounded-lg p-2",
+    style: {
+      background: C.bgSoft
+    }
+  }, React.createElement("div", {
+    className: "text-[10px]",
+    style: {
+      color: C.textFaint
+    }
+  }, "หนี้สินรวม"), React.createElement("div", {
+    className: "text-sm font-semibold",
+    style: {
+      color: C.red,
+      fontFamily: "'JetBrains Mono', monospace"
+    }
+  }, thb(netWorthSummary.debtsTotal), " ฿"))), netWorthSummary.debtsTotal > 0 && React.createElement("p", {
+    className: "mt-2.5 text-[11px] leading-relaxed",
+    style: {
+      color: netWorthSummary.debtRatio >= 50 ? C.red : C.textFaint
+    }
+  }, netWorthSummary.debtRatio >= 50 ? "⚠️ " : "", "หนี้สินคิดเป็น ", netWorthSummary.debtRatio, "% ของสินทรัพย์รวม", netWorthSummary.debtRatio >= 50 ? " — สัดส่วนหนี้ค่อนข้างสูง ควรระวัง" : "")), Object.keys(netWorthSummary.byCategory).length > 0 && React.createElement("div", {
+    className: "rounded-xl p-3.5 mb-3",
+    style: {
+      background: C.panel,
+      border: `1px solid ${C.hairline}`
+    }
+  }, React.createElement("div", {
+    className: "mb-3 text-xs font-semibold",
+    style: {
+      color: C.text
+    }
+  }, "🥧 สัดส่วนสินทรัพย์ (กระจายความเสี่ยง)"), React.createElement("div", {
+    className: "flex items-center justify-center gap-4"
+  }, React.createElement(DonutChart, {
+    segments: Object.entries(netWorthSummary.byCategory).map(([cat, val]) => ({
+      value: val,
+      color: ASSET_CATEGORY_COLORS[cat] || C.textFaint
+    })),
+    size: 108,
+    thickness: 15
+  }), React.createElement("div", {
+    className: "flex flex-1 flex-col gap-1.5"
+  }, Object.entries(netWorthSummary.byCategory).sort((a, b) => b[1] - a[1]).map(([cat, val]) => React.createElement("div", {
+    key: cat,
+    className: "flex items-center justify-between gap-2 text-[11px]"
+  }, React.createElement("span", {
+    className: "flex items-center gap-1.5",
+    style: {
+      color: C.textMuted
+    }
+  }, React.createElement("span", {
+    className: "h-2 w-2 shrink-0 rounded-full",
+    style: {
+      background: ASSET_CATEGORY_COLORS[cat] || C.textFaint
+    }
+  }), cat), React.createElement("span", {
+    style: {
+      color: C.text,
+      fontFamily: "'JetBrains Mono', monospace"
+    }
+  }, thb(val), " (", netWorthSummary.grossAssets > 0 ? Math.round(val / netWorthSummary.grossAssets * 100) : 0, "%)")))))), React.createElement("div", {
+    className: "rounded-xl p-3.5 mb-3",
+    style: {
+      background: C.panel,
+      border: `1px solid ${C.hairline}`
+    }
+  }, React.createElement("div", {
+    className: "mb-2.5 flex items-center justify-between"
+  }, React.createElement("span", {
+    className: "text-xs font-semibold",
+    style: {
+      color: C.text
+    }
+  }, "💵 เงินสด/บัญชี (รวมจากกระเป๋าเงิน)"), React.createElement("span", {
+    className: "text-sm font-semibold",
+    style: {
+      color: C.green,
+      fontFamily: "'JetBrains Mono', monospace"
+    }
+  }, thb(netWorthSummary.cashTotal), " ฿")), React.createElement("p", {
+    className: "text-[11px] leading-relaxed",
+    style: {
+      color: C.textFaint
+    }
+  }, "ยอดนี้ดึงมาจาก \"ยังไม่ได้จัดสรร\" + ยอดคงเหลือในทุกกระเป๋าที่แท็บ \"รายจ่ายทั่วไป\" อัตโนมัติ ไม่ต้องกรอกซ้ำที่นี่")), React.createElement("div", {
+    className: "rounded-xl p-3.5 mb-3",
+    style: {
+      background: C.panel,
+      border: `1px solid ${C.hairline}`
+    }
+  }, React.createElement("div", {
+    className: "mb-2.5 text-xs font-semibold",
+    style: {
+      color: C.text
+    }
+  }, "📈 ทรัพย์สินอื่น (หุ้น, ทอง, กองทุน ฯลฯ)"), assets.length > 0 && React.createElement("div", {
+    className: "mb-2.5 flex flex-col gap-1.5"
+  }, assets.map(a => React.createElement("div", {
+    key: a.id,
+    className: "row-in flex items-center gap-2 rounded-lg p-2",
+    style: {
+      background: C.bgSoft
+    }
+  }, React.createElement("span", {
+    className: "shrink-0 rounded px-1.5 py-0.5 text-[10px] font-medium",
+    style: {
+      background: ASSET_CATEGORY_COLORS[a.category] || C.textFaint,
+      color: "#FFFFFF"
+    }
+  }, a.category), React.createElement("input", {
+    type: "text",
+    value: a.name,
+    onChange: e => updateAsset(a.id, "name", e.target.value),
+    className: "min-w-0 flex-1 bg-transparent text-xs outline-none",
+    style: {
+      color: C.text
+    }
+  }), React.createElement("input", {
+    type: "number",
+    inputMode: "decimal",
+    value: a.value,
+    onChange: e => updateAsset(a.id, "value", e.target.value === "" ? 0 : Number(e.target.value)),
+    className: "w-24 shrink-0 rounded-md px-2 py-1 text-right text-[11px] outline-none",
+    style: {
+      background: C.panel,
+      color: C.text,
+      border: `1px solid ${C.hairline}`,
+      fontFamily: "'JetBrains Mono', monospace"
+    }
+  }), React.createElement("button", {
+    onClick: () => deleteAsset(a.id),
+    "aria-label": "ลบ",
+    type: "button"
+  }, React.createElement(Icon, {
+    name: "trash",
+    size: 14,
+    color: C.textFaint
+  }))))), React.createElement("div", {
+    className: "flex flex-col gap-2"
+  }, React.createElement("div", {
+    className: "flex gap-1.5 overflow-x-auto"
+  }, ASSET_CATEGORIES.map(cat => React.createElement("button", {
+    key: cat,
+    type: "button",
+    onClick: () => setNewAssetCategory(cat),
+    className: "shrink-0 rounded-full px-3 py-1 text-[11px] font-medium",
+    style: {
+      background: newAssetCategory === cat ? C.blue : C.bgSoft,
+      color: newAssetCategory === cat ? "#FFFFFF" : C.textFaint
+    }
+  }, cat))), React.createElement("div", {
+    className: "flex gap-1.5"
+  }, React.createElement("input", {
+    type: "text",
+    value: newAssetName,
+    onChange: e => setNewAssetName(e.target.value),
+    placeholder: "ชื่อ เช่น PTT, ทองคำแท่ง, SCBSET",
+    className: "min-w-0 flex-1 rounded-lg px-3 py-2 text-xs outline-none",
+    style: {
+      background: C.bgSoft,
+      color: C.text,
+      border: `1px solid ${C.hairline}`
+    }
+  }), React.createElement("input", {
+    type: "number",
+    inputMode: "decimal",
+    value: newAssetValue || "",
+    onChange: e => setNewAssetValue(e.target.value === "" ? 0 : Number(e.target.value)),
+    placeholder: "มูลค่า",
+    className: "w-24 shrink-0 rounded-lg px-2 py-2 text-xs outline-none",
+    style: {
+      background: C.bgSoft,
+      color: C.text,
+      border: `1px solid ${C.hairline}`,
+      fontFamily: "'JetBrains Mono', monospace"
+    }
+  })), React.createElement("button", {
+    onClick: addAsset,
+    disabled: !newAssetName.trim() || !newAssetValue,
+    className: "rounded-lg py-2 text-xs font-semibold",
+    style: {
+      background: C.green,
+      color: "#FFFFFF",
+      opacity: !newAssetName.trim() || !newAssetValue ? 0.5 : 1
+    },
+    type: "button"
+  }, "+ เพิ่มทรัพย์สิน"))), React.createElement("div", {
+    className: "rounded-xl p-3.5",
+    style: {
+      background: C.panel,
+      border: `1px solid ${C.hairline}`
+    }
+  }, React.createElement("div", {
+    className: "mb-2.5 text-xs font-semibold",
+    style: {
+      color: C.text
+    }
+  }, "💳 หนี้สิน"), debts.length > 0 && React.createElement("div", {
+    className: "mb-2.5 flex flex-col gap-1.5"
+  }, debts.map(d => React.createElement("div", {
+    key: d.id,
+    className: "row-in flex items-center gap-2 rounded-lg p-2",
+    style: {
+      background: C.bgSoft
+    }
+  }, React.createElement("span", {
+    className: "shrink-0 rounded px-1.5 py-0.5 text-[10px] font-medium",
+    style: {
+      background: C.red,
+      color: "#FFFFFF"
+    }
+  }, d.category), React.createElement("input", {
+    type: "text",
+    value: d.name,
+    onChange: e => updateDebt(d.id, "name", e.target.value),
+    className: "min-w-0 flex-1 bg-transparent text-xs outline-none",
+    style: {
+      color: C.text
+    }
+  }), React.createElement("input", {
+    type: "number",
+    inputMode: "decimal",
+    value: d.value,
+    onChange: e => updateDebt(d.id, "value", e.target.value === "" ? 0 : Number(e.target.value)),
+    className: "w-24 shrink-0 rounded-md px-2 py-1 text-right text-[11px] outline-none",
+    style: {
+      background: C.panel,
+      color: C.text,
+      border: `1px solid ${C.hairline}`,
+      fontFamily: "'JetBrains Mono', monospace"
+    }
+  }), React.createElement("button", {
+    onClick: () => deleteDebt(d.id),
+    "aria-label": "ลบ",
+    type: "button"
+  }, React.createElement(Icon, {
+    name: "trash",
+    size: 14,
+    color: C.textFaint
+  }))))), React.createElement("div", {
+    className: "flex flex-col gap-2"
+  }, React.createElement("div", {
+    className: "flex gap-1.5 overflow-x-auto"
+  }, DEBT_CATEGORIES.map(cat => React.createElement("button", {
+    key: cat,
+    type: "button",
+    onClick: () => setNewDebtCategory(cat),
+    className: "shrink-0 rounded-full px-3 py-1 text-[11px] font-medium",
+    style: {
+      background: newDebtCategory === cat ? C.red : C.bgSoft,
+      color: newDebtCategory === cat ? "#FFFFFF" : C.textFaint
+    }
+  }, cat))), React.createElement("div", {
+    className: "flex gap-1.5"
+  }, React.createElement("input", {
+    type: "text",
+    value: newDebtName,
+    onChange: e => setNewDebtName(e.target.value),
+    placeholder: "ชื่อ เช่น บัตรเครดิตกรุงเทพ",
+    className: "min-w-0 flex-1 rounded-lg px-3 py-2 text-xs outline-none",
+    style: {
+      background: C.bgSoft,
+      color: C.text,
+      border: `1px solid ${C.hairline}`
+    }
+  }), React.createElement("input", {
+    type: "number",
+    inputMode: "decimal",
+    value: newDebtValue || "",
+    onChange: e => setNewDebtValue(e.target.value === "" ? 0 : Number(e.target.value)),
+    placeholder: "ยอดคงค้าง",
+    className: "w-24 shrink-0 rounded-lg px-2 py-2 text-xs outline-none",
+    style: {
+      background: C.bgSoft,
+      color: C.text,
+      border: `1px solid ${C.hairline}`,
+      fontFamily: "'JetBrains Mono', monospace"
+    }
+  })), React.createElement("button", {
+    onClick: addDebt,
+    disabled: !newDebtName.trim() || !newDebtValue,
+    className: "rounded-lg py-2 text-xs font-semibold",
+    style: {
+      background: C.red,
+      color: "#FFFFFF",
+      opacity: !newDebtName.trim() || !newDebtValue ? 0.5 : 1
+    },
+    type: "button"
+  }, "+ เพิ่มหนี้สิน")))), viewingReceipt && React.createElement("div", {
     className: "fixed inset-0 z-50 flex items-center justify-center p-6",
     style: {
       background: "rgba(0,0,0,0.85)"
@@ -10754,7 +11281,7 @@ function GrabProfitMeter() {
     style: {
       background: C.green,
       boxShadow: "0 4px 14px rgba(0,177,79,0.4)",
-      bottom: "6rem"
+      bottom: `calc(6rem + ${viewportBottomOffset}px)`
     },
     type: "button",
     "aria-label": "ถามข้อมูล"
