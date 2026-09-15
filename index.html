@@ -1591,6 +1591,8 @@ function GrabProfitMeter() {
   const [newDebtName, setNewDebtName] = useState("");
   const [newDebtCategory, setNewDebtCategory] = useState("บัตรเครดิต");
   const [newDebtValue, setNewDebtValue] = useState(0);
+  const [newDebtMonthlyPayment, setNewDebtMonthlyPayment] = useState(0);
+  const [extraPaymentInputs, setExtraPaymentInputs] = useState({});
   const [tourPackages, setTourPackages] = useState([]);
   const [tourTrips, setTourTrips] = useState([]);
   const [showTourPackageManager, setShowTourPackageManager] = useState(false);
@@ -2185,11 +2187,35 @@ function GrabProfitMeter() {
       thisMonthIncomeSpent
     };
   }, [entries, extraIncome, tourTrips, walletTransfers, dailyExpenses, maintenanceRecords, paidExpenses, fixedExpenses, walletPoolAdjustment]);
+  const autoCreditDebts = useMemo(() => {
+    return fixedExpenses.filter(e => e.installmentTotalMonths > 0 && e.installmentTotalAmount > 0 && !e.linkedDebtId).map(e => {
+      let ym = e.installmentStartMonth;
+      let remaining = e.installmentTotalAmount;
+      const monthly = e.amount || 0;
+      const end = e.installmentEndMonth || ym;
+      let guard = 0;
+      while (ym && ym <= end && guard < 600) {
+        const isPaid = (paidExpenses[ym] || []).includes(e.id);
+        if (isPaid) remaining -= monthly;
+        ym = addMonthsToYm(ym, 1);
+        guard++;
+      }
+      remaining = Math.max(Math.round(remaining * 100) / 100, 0);
+      return {
+        id: `fx-${e.id}`,
+        name: e.name,
+        category: "บัตรเครดิต",
+        value: remaining,
+        auto: true
+      };
+    }).filter(d => d.value > 0);
+  }, [fixedExpenses, paidExpenses]);
   const netWorthSummary = useMemo(() => {
     const walletsTotal = Math.round(wallets.reduce((a, w) => a + (w.balance || 0), 0) * 100) / 100;
     const cashTotal = Math.round((walletsTotal + (walletPool.unallocated || 0)) * 100) / 100;
     const assetsTotal = Math.round(assets.reduce((a, x) => a + (x.value || 0), 0) * 100) / 100;
-    const debtsTotal = Math.round(debts.reduce((a, x) => a + (x.value || 0), 0) * 100) / 100;
+    const allDebts = [...debts, ...autoCreditDebts];
+    const debtsTotal = Math.round(allDebts.reduce((a, x) => a + (x.value || 0), 0) * 100) / 100;
     const grossAssets = Math.round((cashTotal + assetsTotal) * 100) / 100;
     const netWorth = Math.round((grossAssets - debtsTotal) * 100) / 100;
     const byCategory = {};
@@ -2205,9 +2231,10 @@ function GrabProfitMeter() {
       grossAssets,
       netWorth,
       byCategory,
-      debtRatio
+      debtRatio,
+      allDebts
     };
-  }, [wallets, walletPool.unallocated, assets, debts]);
+  }, [wallets, walletPool.unallocated, assets, debts, autoCreditDebts]);
   const addVehicle = () => {
     const id = `veh-${Date.now()}`;
     setVehicles(prev => [...prev, {
@@ -2410,6 +2437,20 @@ function GrabProfitMeter() {
     if (item && item.walletId && item.walletId !== "central") {
       const delta = wasPaid ? -(item.amount || 0) : item.amount || 0;
       await adjustWalletBalance(item.walletId, delta);
+    }
+    if (item && item.linkedDebtId) {
+      const debtDelta = wasPaid ? item.amount || 0 : -(item.amount || 0);
+      const latestDebts = await readLatestArray("debts", debts);
+      const nextDebts = latestDebts.map(d => d.id === item.linkedDebtId ? {
+        ...d,
+        value: Math.max(Math.round((d.value + debtDelta) * 100) / 100, 0)
+      } : d);
+      setDebts(nextDebts);
+      try {
+        await window.storage.set("debts", JSON.stringify(nextDebts), false);
+      } catch (e) {
+        reportSaveError(e);
+      }
     }
   };
   useEffect(() => {
@@ -2935,11 +2976,33 @@ function GrabProfitMeter() {
   const addDebt = async () => {
     if (!newDebtName.trim() || !newDebtValue || newDebtValue <= 0) return;
     setSaveError("");
+    const isLoan = newDebtCategory === "ผ่อนรถ" || newDebtCategory === "ผ่อนบ้าน";
+    const debtId = `debt-${Date.now()}`;
+    let linkedFixedExpenseId;
+    if (isLoan && newDebtMonthlyPayment > 0) {
+      linkedFixedExpenseId = `debt-fx-${Date.now()}`;
+      const fxItem = {
+        id: linkedFixedExpenseId,
+        name: `${newDebtCategory === "ผ่อนรถ" ? "🚗" : "🏠"} ${newDebtName.trim()}`,
+        amount: newDebtMonthlyPayment,
+        linkedDebtId: debtId
+      };
+      const latestFx = await readLatestArray("fixed-expenses", fixedExpenses);
+      const nextFx = [...latestFx, fxItem];
+      setFixedExpenses(nextFx);
+      try {
+        await window.storage.set("fixed-expenses", JSON.stringify(nextFx), false);
+      } catch (e) {
+        reportSaveError(e);
+      }
+    }
     const debt = {
-      id: `debt-${Date.now()}`,
+      id: debtId,
       name: newDebtName.trim(),
       category: newDebtCategory,
-      value: newDebtValue
+      value: newDebtValue,
+      monthlyPayment: isLoan ? newDebtMonthlyPayment || 0 : undefined,
+      linkedFixedExpenseId
     };
     const latest = await readLatestArray("debts", debts);
     const next = [...latest, debt];
@@ -2951,6 +3014,22 @@ function GrabProfitMeter() {
     }
     setNewDebtName("");
     setNewDebtValue(0);
+    setNewDebtMonthlyPayment(0);
+  };
+  const addExtraDebtPayment = async (debtId, amount) => {
+    setSaveError("");
+    if (!amount || amount <= 0) return;
+    const latest = await readLatestArray("debts", debts);
+    const next = latest.map(d => d.id === debtId ? {
+      ...d,
+      value: Math.max(Math.round((d.value - amount) * 100) / 100, 0)
+    } : d);
+    setDebts(next);
+    try {
+      await window.storage.set("debts", JSON.stringify(next), false);
+    } catch (e) {
+      reportSaveError(e);
+    }
   };
   const updateDebt = async (id, field, value) => {
     setSaveError("");
@@ -4485,7 +4564,10 @@ function GrabProfitMeter() {
         ::-webkit-scrollbar-track { background: transparent; }
         ::-webkit-scrollbar-thumb { background: linear-gradient(180deg, ${C.green}, ${C.blue}); border-radius: 999px; }
       `), React.createElement("div", {
-    className: "w-full max-w-md px-4 pb-28 pt-6 sm:max-w-lg sm:px-6 md:max-w-2xl md:px-8 lg:max-w-3xl"
+    className: "w-full max-w-md px-4 pb-28 pt-6 sm:max-w-lg sm:px-6 md:max-w-2xl md:px-8 lg:max-w-3xl",
+    style: {
+      paddingBottom: "9rem"
+    }
   }, saveError && React.createElement("div", {
     className: "mb-4 flex items-start gap-2.5 rounded-xl p-3.5 row-in",
     style: {
@@ -10321,21 +10403,28 @@ function GrabProfitMeter() {
     style: {
       color: C.text
     }
-  }, "💳 หนี้สิน"), debts.length > 0 && React.createElement("div", {
+  }, "💳 หนี้สิน"), netWorthSummary.allDebts.length > 0 && React.createElement("div", {
     className: "mb-2.5 flex flex-col gap-1.5"
-  }, debts.map(d => React.createElement("div", {
+  }, netWorthSummary.allDebts.map(d => React.createElement("div", {
     key: d.id,
-    className: "row-in flex items-center gap-2 rounded-lg p-2",
+    className: "row-in flex flex-col gap-1.5 rounded-lg p-2",
     style: {
       background: C.bgSoft
     }
+  }, React.createElement("div", {
+    className: "flex items-center gap-2"
   }, React.createElement("span", {
     className: "shrink-0 rounded px-1.5 py-0.5 text-[10px] font-medium",
     style: {
       background: C.red,
       color: "#FFFFFF"
     }
-  }, d.category), React.createElement("input", {
+  }, d.category), d.auto ? React.createElement("span", {
+    className: "min-w-0 flex-1 truncate text-xs",
+    style: {
+      color: C.text
+    }
+  }, d.name) : React.createElement("input", {
     type: "text",
     value: d.name,
     onChange: e => updateDebt(d.id, "name", e.target.value),
@@ -10343,7 +10432,13 @@ function GrabProfitMeter() {
     style: {
       color: C.text
     }
-  }), React.createElement("input", {
+  }), d.auto ? React.createElement("span", {
+    className: "w-24 shrink-0 text-right text-[11px]",
+    style: {
+      color: C.text,
+      fontFamily: "'JetBrains Mono', monospace"
+    }
+  }, thb(d.value)) : React.createElement("input", {
     type: "number",
     inputMode: "decimal",
     value: d.value,
@@ -10355,7 +10450,7 @@ function GrabProfitMeter() {
       border: `1px solid ${C.hairline}`,
       fontFamily: "'JetBrains Mono', monospace"
     }
-  }), React.createElement("button", {
+  }), !d.auto && React.createElement("button", {
     onClick: () => deleteDebt(d.id),
     "aria-label": "ลบ",
     type: "button"
@@ -10363,7 +10458,52 @@ function GrabProfitMeter() {
     name: "trash",
     size: 14,
     color: C.textFaint
-  }))))), React.createElement("div", {
+  }))), d.auto ? React.createElement("span", {
+    className: "text-[10px]",
+    style: {
+      color: C.textFaint
+    }
+  }, "🔗 ดึงมาจากรายจ่ายรายเดือนอัตโนมัติ (ยอดคงเหลือหลังหักงวดที่จ่ายแล้ว)") : React.createElement("div", {
+    className: "flex items-center gap-1.5"
+  }, d.monthlyPayment > 0 && React.createElement("span", {
+    className: "text-[10px]",
+    style: {
+      color: C.textFaint
+    }
+  }, "ผ่อนเดือนละ ", thb(d.monthlyPayment), " ฿"), React.createElement("input", {
+    type: "number",
+    inputMode: "decimal",
+    value: extraPaymentInputs[d.id] || "",
+    onChange: e => setExtraPaymentInputs(prev => ({
+      ...prev,
+      [d.id]: e.target.value
+    })),
+    placeholder: "จ่ายเพิ่ม",
+    className: "ml-auto w-20 shrink-0 rounded-md px-2 py-1 text-right text-[10px] outline-none",
+    style: {
+      background: C.panel,
+      color: C.text,
+      border: `1px solid ${C.hairline}`,
+      fontFamily: "'JetBrains Mono', monospace"
+    }
+  }), React.createElement("button", {
+    type: "button",
+    onClick: () => {
+      const amt = Number(extraPaymentInputs[d.id]) || 0;
+      if (amt > 0) {
+        addExtraDebtPayment(d.id, amt);
+        setExtraPaymentInputs(prev => ({
+          ...prev,
+          [d.id]: ""
+        }));
+      }
+    },
+    className: "shrink-0 rounded-md px-2 py-1 text-[10px] font-medium",
+    style: {
+      background: C.greenDim,
+      color: C.green
+    }
+  }, "จ่ายเพิ่ม"))))), React.createElement("div", {
     className: "flex flex-col gap-2"
   }, React.createElement("div", {
     className: "flex gap-1.5 overflow-x-auto"
@@ -10402,7 +10542,27 @@ function GrabProfitMeter() {
       border: `1px solid ${C.hairline}`,
       fontFamily: "'JetBrains Mono', monospace"
     }
-  })), React.createElement("button", {
+  })), (newDebtCategory === "ผ่อนรถ" || newDebtCategory === "ผ่อนบ้าน") && React.createElement("div", {
+    className: "flex flex-col gap-1"
+  }, React.createElement("input", {
+    type: "number",
+    inputMode: "decimal",
+    value: newDebtMonthlyPayment || "",
+    onChange: e => setNewDebtMonthlyPayment(e.target.value === "" ? 0 : Number(e.target.value)),
+    placeholder: "ผ่อนเดือนละกี่บาท (ไม่บังคับ)",
+    className: "rounded-lg px-3 py-2 text-xs outline-none",
+    style: {
+      background: C.bgSoft,
+      color: C.text,
+      border: `1px solid ${C.hairline}`,
+      fontFamily: "'JetBrains Mono', monospace"
+    }
+  }), newDebtMonthlyPayment > 0 && React.createElement("p", {
+    className: "text-[10px] leading-relaxed",
+    style: {
+      color: C.textFaint
+    }
+  }, "ใส่ยอดนี้แล้ว ระบบจะสร้างรายการ \"รายจ่ายรายเดือน\" ให้อัตโนมัติ พอติ๊กจ่ายแล้วในแต่ละเดือน ยอดหนี้คงเหลือจะลดลงให้เองตามงวดที่จ่าย — จะจ่ายเพิ่มกว่าที่ตั้งไว้เมื่อไหร่ก็กดปุ่ม \"จ่ายเพิ่ม\" ที่รายการหนี้ได้เลย")), React.createElement("button", {
     onClick: addDebt,
     disabled: !newDebtName.trim() || !newDebtValue,
     className: "rounded-lg py-2 text-xs font-semibold",
