@@ -1593,6 +1593,7 @@ function GrabProfitMeter() {
   const [newDebtValue, setNewDebtValue] = useState(0);
   const [newDebtMonthlyPayment, setNewDebtMonthlyPayment] = useState(0);
   const [extraPaymentInputs, setExtraPaymentInputs] = useState({});
+  const [extraInstallmentInputs, setExtraInstallmentInputs] = useState({});
   const [tourPackages, setTourPackages] = useState([]);
   const [tourTrips, setTourTrips] = useState([]);
   const [showTourPackageManager, setShowTourPackageManager] = useState(false);
@@ -2485,6 +2486,46 @@ function GrabProfitMeter() {
       } catch (e) {
         reportSaveError(e);
       }
+    }
+  };
+  const payExtraInstallment = async (itemId, extraAmount) => {
+    setSaveError("");
+    const item = fixedExpenses.find(e => e.id === itemId);
+    if (!item || !item.installmentTotalMonths || !extraAmount || extraAmount <= 0) return;
+    const monthly = item.amount || 0;
+    if (monthly <= 0) return;
+    const monthsToMarkPaid = Math.max(1, Math.round(extraAmount / monthly));
+    let latest = paidExpenses;
+    try {
+      const fresh = await window.storage.get("paid-expenses", false);
+      if (fresh && fresh.value) latest = JSON.parse(fresh.value);
+    } catch (e) {}
+    const next = {
+      ...latest
+    };
+    let ym = item.installmentStartMonth;
+    const end = item.installmentEndMonth || ym;
+    let marked = 0;
+    let guard = 0;
+    while (ym && ym <= end && marked < monthsToMarkPaid && guard < 600) {
+      const monthList = next[ym] || [];
+      if (!monthList.includes(itemId)) {
+        next[ym] = [...monthList, itemId];
+        marked++;
+      }
+      ym = addMonthsToYm(ym, 1);
+      guard++;
+    }
+    if (marked === 0) return;
+    setPaidExpenses(next);
+    try {
+      await window.storage.set("paid-expenses", JSON.stringify(next), false);
+    } catch (e) {
+      reportSaveError(e);
+      return;
+    }
+    if (item.walletId && item.walletId !== "central") {
+      await adjustWalletBalance(item.walletId, -(monthly * marked));
     }
   };
   useEffect(() => {
@@ -8046,7 +8087,42 @@ function GrabProfitMeter() {
       style: {
         color: activeNow ? C.blue : C.textFaint
       }
-    }, "💳", " ", activeNow ? `ผ่อนเดือนที่ ${monthsElapsed}/${item.installmentTotalMonths} (รวม ${thb(item.installmentTotalAmount)} ฿)` : fixedExpViewMonth < item.installmentStartMonth ? `ยังไม่เริ่มผ่อน (เริ่ม ${monthLabelThai(item.installmentStartMonth)})` : `ผ่อนครบแล้ว (จบ ${monthLabelThai(item.installmentEndMonth)})`), React.createElement("div", {
+    }, "💳", " ", activeNow ? `ผ่อนเดือนที่ ${monthsElapsed}/${item.installmentTotalMonths} (รวม ${thb(item.installmentTotalAmount)} ฿)` : fixedExpViewMonth < item.installmentStartMonth ? `ยังไม่เริ่มผ่อน (เริ่ม ${monthLabelThai(item.installmentStartMonth)})` : `ผ่อนครบแล้ว (จบ ${monthLabelThai(item.installmentEndMonth)})`), isInstallment && activeNow && React.createElement("div", {
+      className: "flex items-center gap-1.5 pl-7"
+    }, React.createElement("input", {
+      type: "number",
+      inputMode: "decimal",
+      value: extraInstallmentInputs[item.id] || "",
+      onChange: e => setExtraInstallmentInputs(prev => ({
+        ...prev,
+        [item.id]: e.target.value
+      })),
+      placeholder: "จ่ายเพิ่ม/จ่ายล่วงหน้า",
+      className: "w-32 shrink-0 rounded-md px-2 py-1 text-right text-[10px] outline-none",
+      style: {
+        background: C.panel,
+        color: C.text,
+        border: `1px solid ${C.hairline}`,
+        fontFamily: "'JetBrains Mono', monospace"
+      }
+    }), React.createElement("button", {
+      type: "button",
+      onClick: () => {
+        const amt = Number(extraInstallmentInputs[item.id]) || 0;
+        if (amt > 0) {
+          payExtraInstallment(item.id, amt);
+          setExtraInstallmentInputs(prev => ({
+            ...prev,
+            [item.id]: ""
+          }));
+        }
+      },
+      className: "shrink-0 rounded-md px-2 py-1 text-[10px] font-medium",
+      style: {
+        background: C.greenDim,
+        color: C.green
+      }
+    }, "จ่ายเพิ่ม")), React.createElement("div", {
       className: "flex items-center gap-1.5"
     }, React.createElement("button", {
       onClick: () => togglePaidExpense(fixedExpViewMonth, item.id),
