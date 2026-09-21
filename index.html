@@ -8075,6 +8075,22 @@ function GrabProfitMeter() {
     const isInstallment = !!item.installmentEndMonth;
     const activeNow = isFixedItemActiveInMonth(item, fixedExpViewMonth);
     const monthsElapsed = isInstallment ? Math.max(1, Math.min(item.installmentTotalMonths, (Number(fixedExpViewMonth.slice(0, 4)) - Number(item.installmentStartMonth.slice(0, 4))) * 12 + (Number(fixedExpViewMonth.slice(5, 7)) - Number(item.installmentStartMonth.slice(5, 7))) + 1)) : 0;
+    let monthsPaidCount = 0;
+    let remainingBalance = item.installmentTotalAmount || 0;
+    if (isInstallment) {
+      let ym = item.installmentStartMonth;
+      const end = item.installmentEndMonth;
+      let guard = 0;
+      while (ym && ym <= end && guard < 600) {
+        if ((paidExpenses[ym] || []).includes(item.id)) {
+          monthsPaidCount++;
+          remainingBalance -= item.amount || 0;
+        }
+        ym = addMonthsToYm(ym, 1);
+        guard++;
+      }
+      remainingBalance = Math.max(Math.round(remainingBalance * 100) / 100, 0);
+    }
     return React.createElement("div", {
       key: item.id,
       className: "flex flex-col gap-1.5 rounded-lg p-2",
@@ -8087,7 +8103,7 @@ function GrabProfitMeter() {
       style: {
         color: activeNow ? C.blue : C.textFaint
       }
-    }, "💳", " ", activeNow ? `ผ่อนเดือนที่ ${monthsElapsed}/${item.installmentTotalMonths} (รวม ${thb(item.installmentTotalAmount)} ฿)` : fixedExpViewMonth < item.installmentStartMonth ? `ยังไม่เริ่มผ่อน (เริ่ม ${monthLabelThai(item.installmentStartMonth)})` : `ผ่อนครบแล้ว (จบ ${monthLabelThai(item.installmentEndMonth)})`), isInstallment && activeNow && React.createElement("div", {
+    }, "💳", " ", activeNow ? `ผ่อนเดือนที่ ${monthsElapsed}/${item.installmentTotalMonths} · จ่ายแล้ว ${monthsPaidCount} งวด เหลือ ${thb(remainingBalance)} ฿ (รวม ${thb(item.installmentTotalAmount)} ฿)` : fixedExpViewMonth < item.installmentStartMonth ? `ยังไม่เริ่มผ่อน (เริ่ม ${monthLabelThai(item.installmentStartMonth)})` : `ผ่อนครบแล้ว (จบ ${monthLabelThai(item.installmentEndMonth)})`), isInstallment && activeNow && React.createElement("div", {
       className: "flex items-center gap-1.5 pl-7"
     }, React.createElement("input", {
       type: "number",
