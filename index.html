@@ -4641,7 +4641,9 @@ function GrabProfitMeter() {
       `), React.createElement("div", {
     className: "w-full max-w-md px-4 pb-28 pt-6 sm:max-w-lg sm:px-6 md:max-w-2xl md:px-8 lg:max-w-3xl",
     style: {
-      paddingBottom: "9rem"
+      paddingBottom: "9rem",
+      display: "flex",
+      flexDirection: "column"
     }
   }, saveError && React.createElement("div", {
     className: "mb-4 flex items-start gap-2.5 rounded-xl p-3.5 row-in",
@@ -4676,7 +4678,10 @@ function GrabProfitMeter() {
       color: C.red
     }
   }, "✕"))), React.createElement("div", {
-    className: "mb-5 flex items-center justify-between"
+    className: "mb-5 flex items-center justify-between",
+    style: {
+      order: -2
+    }
   }, React.createElement("div", null, React.createElement("h1", {
     className: "text-lg font-semibold tracking-tight",
     style: {
@@ -9467,7 +9472,8 @@ function GrabProfitMeter() {
     className: "mt-4 rounded-xl p-3.5",
     style: {
       background: C.panel,
-      border: `1px solid ${C.hairline}`
+      border: `1px solid ${C.hairline}`,
+      order: -1
     }
   }, React.createElement("div", {
     className: "mb-2.5 flex items-center justify-between"
