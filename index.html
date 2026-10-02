@@ -1594,6 +1594,7 @@ function GrabProfitMeter() {
   const [newDebtMonthlyPayment, setNewDebtMonthlyPayment] = useState(0);
   const [extraPaymentInputs, setExtraPaymentInputs] = useState({});
   const [extraInstallmentInputs, setExtraInstallmentInputs] = useState({});
+  const [showCompletedInstallments, setShowCompletedInstallments] = useState(false);
   const [tourPackages, setTourPackages] = useState([]);
   const [tourTrips, setTourTrips] = useState([]);
   const [showTourPackageManager, setShowTourPackageManager] = useState(false);
@@ -8075,7 +8076,11 @@ function GrabProfitMeter() {
     }
   }, "รวม ", thb(monthlyCoverage.totalFixed), " ฿/เดือน")), React.createElement("div", {
     className: "flex flex-col gap-2"
-  }, fixedExpenses.map(item => {
+  }, fixedExpenses.filter(item => {
+    const isInstallment = !!item.installmentEndMonth;
+    const isCompletedInstallment = isInstallment && fixedExpViewMonth > item.installmentEndMonth;
+    return showCompletedInstallments || !isCompletedInstallment;
+  }).map(item => {
     const isPaid = (paidExpenses[fixedExpViewMonth] || []).includes(item.id);
     const isInstallment = !!item.installmentEndMonth;
     const activeNow = isFixedItemActiveInMonth(item, fixedExpViewMonth);
@@ -8228,7 +8233,17 @@ function GrabProfitMeter() {
         border: `1px solid ${C.hairline}`
       }
     }, item.linkedDebtId ? "💸 จ่ายจาก " : "👛 พักไว้ที่ ", w.name))));
-  })), React.createElement("p", {
+  }), (() => {
+    const completedCount = fixedExpenses.filter(item => !!item.installmentEndMonth && fixedExpViewMonth > item.installmentEndMonth).length;
+    return completedCount > 0 && React.createElement("button", {
+      type: "button",
+      onClick: () => setShowCompletedInstallments(v => !v),
+      className: "mt-1 text-[11px] font-medium underline",
+      style: {
+        color: C.textFaint
+      }
+    }, showCompletedInstallments ? "ซ่อนรายการที่ผ่อนครบแล้ว" : `แสดงรายการที่ผ่อนครบแล้ว (${completedCount} รายการ)`);
+  })()), React.createElement("p", {
     className: "mt-2 text-[11px]",
     style: {
       color: C.textFaint
