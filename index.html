@@ -1553,6 +1553,7 @@ function GrabProfitMeter() {
   const [cashEnd, setCashEnd] = useState(0);
   const [openingFloat, setOpeningFloat] = useState(0);
   const [grabTransfer, setGrabTransfer] = useState(0);
+  const [directTransfer, setDirectTransfer] = useState(0);
   const [vehicles, setVehicles] = useState(DEFAULT_VEHICLES);
   const [activeVehicleId, setActiveVehicleId] = useState("default");
   const [formVehicleId, setFormVehicleId] = useState("default");
@@ -2561,6 +2562,7 @@ function GrabProfitMeter() {
       setCashEnd(existing.cashEnd || 0);
       setOpeningFloat(existing.openingFloat || 0);
       setGrabTransfer(existing.grabTransfer || 0);
+      setDirectTransfer(existing.directTransfer || 0);
       setFormVehicleId(existing.vehicleId || activeVehicleId);
       setOtherCost(existing.otherCost || 0);
       setOtherLabel(existing.otherLabel || "");
@@ -2586,6 +2588,7 @@ function GrabProfitMeter() {
       setCashEnd(0);
       setOpeningFloat(0);
       setGrabTransfer(0);
+      setDirectTransfer(0);
       setFormVehicleId(activeVehicleId);
       setOtherCost(0);
       setOtherLabel("");
@@ -2657,6 +2660,7 @@ function GrabProfitMeter() {
       cashEnd: cashEnd > 0 ? cashEnd : undefined,
       openingFloat: openingFloat > 0 ? openingFloat : undefined,
       grabTransfer: grabTransfer > 0 ? grabTransfer : undefined,
+      directTransfer: directTransfer > 0 ? directTransfer : undefined,
       vehicleId: formVehicleId,
       otherCost,
       otherLabel,
@@ -3584,6 +3588,7 @@ function GrabProfitMeter() {
       "เงินสดคงเหลือ": e.cashEnd || 0,
       "เงินตั้งต้น": e.openingFloat || 0,
       "เงินที่ Grab โอนจริง": e.grabTransfer || 0,
+      "ผู้โดยสารโอนเข้าบัญชีตรง": e.directTransfer || 0,
       ค่าประกัน: Math.round((e.insuranceCost || 0) * 100) / 100,
       "ภาษีอินเซนทีฟ+เทอร์โบ 3%": Math.round((e.incentiveTax || 0) * 100) / 100,
       ค่าซ่อมบำรุงเฉลี่ย: Math.round((e.maintenanceCost || 0) * 100) / 100,
@@ -6094,7 +6099,7 @@ function GrabProfitMeter() {
     const hasCash = cashEnd > 0;
     const cashFromPax = hasCash ? Math.round((cashEnd - openingEff + (tollPaid || 0)) * 100) / 100 : 0;
     const grabIncome = (income || 0) + (tips || 0);
-    const cashless = hasCash ? Math.round((grabIncome - cashFromPax) * 100) / 100 : 0;
+    const cashless = hasCash ? Math.round((grabIncome - cashFromPax - (directTransfer || 0)) * 100) / 100 : 0;
     const expected = hasCash ? Math.round((cashless + (tollPaid || 0)) * 100) / 100 : 0;
     const diff = hasCash && grabTransfer > 0 ? Math.round((grabTransfer - expected) * 100) / 100 : null;
     const line = (label, value, color, bold) => React.createElement("div", {
@@ -6154,12 +6159,18 @@ function GrabProfitMeter() {
       value: grabTransfer,
       onChange: setGrabTransfer,
       placeholder: "0"
+    }), React.createElement(Field, {
+      label: "ผู้โดยสารโอนเข้าบัญชีตรง",
+      suffix: "บาท",
+      value: directTransfer,
+      onChange: setDirectTransfer,
+      placeholder: "0"
     })), hasCash && React.createElement("div", {
       className: "mt-3 flex flex-col gap-1 rounded-lg p-2.5",
       style: {
         background: C.bgSoft
       }
-    }, line("รายได้ Grab วันนี้ (ค่าโดยสาร + ทิป)", `${thb(grabIncome)} ฿`), line("เงินสดที่ได้จากผู้โดยสาร (สุทธิหลังทอน)", `− ${thb(cashFromPax)} ฿`), line("ส่วนที่ผ่านแอป/โอน", `${thb(cashless)} ฿`), line("+ ค่าทางด่วนที่ Grab ต้องคืน", `${thb(tollPaid || 0)} ฿`), line("Grab ควรโอนให้", `${thb(expected)} ฿`, C.greenDeep, true), diff !== null && line("ส่วนต่าง (โอนจริง − ที่ควรได้)", `${diff > 0 ? "+" : ""}${thb(diff)} ฿`, Math.abs(diff) <= 5 ? C.green : C.red, true)), diff !== null && React.createElement("p", {
+    }, line("รายได้ Grab วันนี้ (ค่าโดยสาร + ทิป)", `${thb(grabIncome)} ฿`), line("เงินสดที่ได้จากผู้โดยสาร (สุทธิหลังทอน)", `− ${thb(cashFromPax)} ฿`), directTransfer > 0 && line("ผู้โดยสารโอนเข้าบัญชีตรง", `− ${thb(directTransfer)} ฿`), line("ส่วนที่ผ่านแอป (Grab ต้องโอนให้)", `${thb(cashless)} ฿`), line("+ ค่าทางด่วนที่ Grab ต้องคืน", `${thb(tollPaid || 0)} ฿`), line("Grab ควรโอนให้", `${thb(expected)} ฿`, C.greenDeep, true), diff !== null && line("ส่วนต่าง (โอนจริง − ที่ควรได้)", `${diff > 0 ? "+" : ""}${thb(diff)} ฿`, Math.abs(diff) <= 5 ? C.green : C.red, true)), diff !== null && React.createElement("p", {
       className: "mt-2 text-[11px] leading-relaxed",
       style: {
         color: Math.abs(diff) <= 5 ? C.greenDeep : "#92400E"
