@@ -1548,6 +1548,11 @@ function GrabProfitMeter() {
   const [homeChargeTouPeriod, setHomeChargeTouPeriod] = useState("offpeak");
   const [outsideChargeKwh, setOutsideChargeKwh] = useState(0);
   const [outsideChargeCost, setOutsideChargeCost] = useState(0);
+  const [outsideChargeByCredit, setOutsideChargeByCredit] = useState(true);
+  const [tollPaid, setTollPaid] = useState(0);
+  const [cashEnd, setCashEnd] = useState(0);
+  const [openingFloat, setOpeningFloat] = useState(0);
+  const [grabTransfer, setGrabTransfer] = useState(0);
   const [vehicles, setVehicles] = useState(DEFAULT_VEHICLES);
   const [activeVehicleId, setActiveVehicleId] = useState("default");
   const [formVehicleId, setFormVehicleId] = useState("default");
@@ -2551,6 +2556,11 @@ function GrabProfitMeter() {
       setHomeChargeTouPeriod(existing.homeChargeTouPeriod || "offpeak");
       setOutsideChargeKwh(existing.outsideChargeKwh || 0);
       setOutsideChargeCost(existing.outsideChargeCost || 0);
+      setOutsideChargeByCredit(existing.outsideChargeByCredit === true);
+      setTollPaid(existing.tollPaid || 0);
+      setCashEnd(existing.cashEnd || 0);
+      setOpeningFloat(existing.openingFloat || 0);
+      setGrabTransfer(existing.grabTransfer || 0);
       setFormVehicleId(existing.vehicleId || activeVehicleId);
       setOtherCost(existing.otherCost || 0);
       setOtherLabel(existing.otherLabel || "");
@@ -2571,6 +2581,11 @@ function GrabProfitMeter() {
       setHomeChargeTouPeriod("offpeak");
       setOutsideChargeKwh(0);
       setOutsideChargeCost(0);
+      setOutsideChargeByCredit(true);
+      setTollPaid(0);
+      setCashEnd(0);
+      setOpeningFloat(0);
+      setGrabTransfer(0);
       setFormVehicleId(activeVehicleId);
       setOtherCost(0);
       setOtherLabel("");
@@ -2637,6 +2652,11 @@ function GrabProfitMeter() {
       homeChargeTouPeriod: isFormVehicleEV && homeChargeKwh > 0 ? homeChargeTouPeriod : undefined,
       outsideChargeKwh: isFormVehicleEV && outsideChargeKwh > 0 ? outsideChargeKwh : undefined,
       outsideChargeCost: isFormVehicleEV && outsideChargeKwh > 0 ? outsideChargeCost : undefined,
+      outsideChargeByCredit: isFormVehicleEV && outsideChargeKwh > 0 && outsideChargeCost > 0 && outsideChargeByCredit ? true : undefined,
+      tollPaid: tollPaid > 0 ? tollPaid : undefined,
+      cashEnd: cashEnd > 0 ? cashEnd : undefined,
+      openingFloat: openingFloat > 0 ? openingFloat : undefined,
+      grabTransfer: grabTransfer > 0 ? grabTransfer : undefined,
       vehicleId: formVehicleId,
       otherCost,
       otherLabel,
@@ -3560,6 +3580,10 @@ function GrabProfitMeter() {
       "ช่วงเวลาชาร์จบ้าน": e.homeChargeTouPeriod === "onpeak" ? "On-Peak" : e.homeChargeTouPeriod === "offpeak" ? "Off-Peak" : e.homeChargeTouPeriod === "normal" ? "ไฟบ้านปกติ" : "",
       "ชาร์จนอกบ้าน (kWh)": e.outsideChargeKwh || 0,
       "ค่าชาร์จนอกบ้าน": e.outsideChargeCost || 0,
+      "ค่าทางด่วนที่สำรองจ่าย": e.tollPaid || 0,
+      "เงินสดคงเหลือ": e.cashEnd || 0,
+      "เงินตั้งต้น": e.openingFloat || 0,
+      "เงินที่ Grab โอนจริง": e.grabTransfer || 0,
       ค่าประกัน: Math.round((e.insuranceCost || 0) * 100) / 100,
       "ภาษีอินเซนทีฟ+เทอร์โบ 3%": Math.round((e.incentiveTax || 0) * 100) / 100,
       ค่าซ่อมบำรุงเฉลี่ย: Math.round((e.maintenanceCost || 0) * 100) / 100,
@@ -5914,7 +5938,21 @@ function GrabProfitMeter() {
     value: outsideChargeCost,
     onChange: setOutsideChargeCost,
     placeholder: "0"
-  }))), React.createElement("div", {
+  })), React.createElement("label", {
+    className: "mt-2.5 flex cursor-pointer items-center gap-2 text-[11px]",
+    style: {
+      color: C.text
+    }
+  }, React.createElement("input", {
+    type: "checkbox",
+    checked: outsideChargeByCredit,
+    onChange: e => setOutsideChargeByCredit(e.target.checked)
+  }), "💳 จ่ายด้วยบัตรเครดิต"), outsideChargeByCredit && outsideChargeCost > 0 && React.createElement("p", {
+    className: "mt-1 text-[10px] leading-relaxed",
+    style: {
+      color: C.textFaint
+    }
+  }, "ยังนับเป็นต้นทุนของวันนี้ตามปกติ — ยอดนี้จะไปสรุปในแท็บรายจ่ายรายเดือนว่าต้องจ่ายบิลบัตรเท่าไหร่")), React.createElement("div", {
     className: "mb-2 flex items-center justify-between rounded-lg px-3 py-2",
     style: {
       background: C.greenDim
@@ -6050,7 +6088,89 @@ function GrabProfitMeter() {
       color: C.text,
       border: `1px solid ${C.hairline}`
     }
-  }))), React.createElement("button", {
+  }))), (() => {
+    const fw = wallets.find(w => w.isFloatWallet);
+    const openingEff = openingFloat > 0 ? openingFloat : fw ? fw.floatTarget || 0 : 0;
+    const hasCash = cashEnd > 0;
+    const cashFromPax = hasCash ? Math.round((cashEnd - openingEff + (tollPaid || 0)) * 100) / 100 : 0;
+    const grabIncome = (income || 0) + (tips || 0);
+    const cashless = hasCash ? Math.round((grabIncome - cashFromPax) * 100) / 100 : 0;
+    const expected = hasCash ? Math.round((cashless + (tollPaid || 0)) * 100) / 100 : 0;
+    const diff = hasCash && grabTransfer > 0 ? Math.round((grabTransfer - expected) * 100) / 100 : null;
+    const line = (label, value, color, bold) => React.createElement("div", {
+      className: "flex items-center justify-between text-[11px]"
+    }, React.createElement("span", {
+      style: {
+        color: C.textMuted,
+        fontWeight: bold ? 600 : 400
+      }
+    }, label), React.createElement("span", {
+      style: {
+        color: color || C.text,
+        fontWeight: bold ? 600 : 400,
+        fontFamily: "'JetBrains Mono', monospace"
+      }
+    }, value));
+    return React.createElement("div", {
+      className: "mb-4 rounded-xl p-3.5",
+      style: {
+        background: C.panel,
+        border: `1px solid ${C.hairline}`,
+        borderLeft: `3px solid ${C.teal}`
+      }
+    }, React.createElement("p", {
+      className: "mb-0.5 text-xs font-semibold",
+      style: {
+        color: C.text
+      }
+    }, "🧾 เช็คเงินสด & เงินโอนจาก Grab"), React.createElement("p", {
+      className: "mb-2.5 text-[10px] leading-relaxed",
+      style: {
+        color: C.textFaint
+      }
+    }, "กรอกตอนจบวัน เพื่อเช็คว่า Grab โอนเงินมาถูกต้องรวมค่าทางด่วนที่สำรองจ่ายหรือไม่ (ไม่กระทบกำไร และไม่บังคับกรอก)"), React.createElement("div", {
+      className: "grid grid-cols-2 gap-2.5"
+    }, React.createElement(Field, {
+      label: "เงินสดคงเหลือในมือ",
+      suffix: "บาท",
+      value: cashEnd,
+      onChange: setCashEnd,
+      placeholder: "รวมเงินตั้งต้น"
+    }), React.createElement(Field, {
+      label: "ค่าทางด่วนที่สำรองจ่าย",
+      suffix: "บาท",
+      value: tollPaid,
+      onChange: setTollPaid,
+      placeholder: "0"
+    }), React.createElement(Field, {
+      label: "เงินตั้งต้นตอนเริ่มวัน",
+      suffix: "บาท",
+      value: openingFloat,
+      onChange: setOpeningFloat,
+      placeholder: fw ? String(fw.floatTarget || 0) : "0"
+    }), React.createElement(Field, {
+      label: "เงินที่ Grab โอนเข้าจริง",
+      suffix: "บาท",
+      value: grabTransfer,
+      onChange: setGrabTransfer,
+      placeholder: "0"
+    })), hasCash && React.createElement("div", {
+      className: "mt-3 flex flex-col gap-1 rounded-lg p-2.5",
+      style: {
+        background: C.bgSoft
+      }
+    }, line("รายได้ Grab วันนี้ (ค่าโดยสาร + ทิป)", `${thb(grabIncome)} ฿`), line("เงินสดที่ได้จากผู้โดยสาร (สุทธิหลังทอน)", `− ${thb(cashFromPax)} ฿`), line("ส่วนที่ผ่านแอป/โอน", `${thb(cashless)} ฿`), line("+ ค่าทางด่วนที่ Grab ต้องคืน", `${thb(tollPaid || 0)} ฿`), line("Grab ควรโอนให้", `${thb(expected)} ฿`, C.greenDeep, true), diff !== null && line("ส่วนต่าง (โอนจริง − ที่ควรได้)", `${diff > 0 ? "+" : ""}${thb(diff)} ฿`, Math.abs(diff) <= 5 ? C.green : C.red, true)), diff !== null && React.createElement("p", {
+      className: "mt-2 text-[11px] leading-relaxed",
+      style: {
+        color: Math.abs(diff) <= 5 ? C.greenDeep : "#92400E"
+      }
+    }, Math.abs(diff) <= 5 ? "✅ ยอดโอนตรงกับที่ควรได้" : diff < 0 ? `⚠️ Grab โอนขาด ${thb(Math.abs(diff))} ฿ — ลองเช็คว่าค่าทางด่วนถูกคืนครบไหม หรือยอดยังไม่เข้า` : `ℹ️ Grab โอนเกิน ${thb(diff)} ฿ — อาจรวมโบนัส/ยอดค้างจากวันก่อน หรือกรอกเงินสดคลาดเคลื่อน`), !hasCash && grabTransfer > 0 && React.createElement("p", {
+      className: "mt-2 text-[10px]",
+      style: {
+        color: C.textFaint
+      }
+    }, "กรอก \"เงินสดคงเหลือในมือ\" ด้วย เพื่อให้ระบบคำนวณว่าควรโอนเท่าไหร่"));
+  })(), React.createElement("button", {
     onClick: saveEntry,
     className: "w-full rounded-xl py-3 text-sm font-semibold transition-all",
     style: {
@@ -8268,7 +8388,70 @@ function GrabProfitMeter() {
       background: item.isCovered ? C.green : C.amber,
       transition: "width 0.4s ease"
     }
-  }))))))), React.createElement("div", {
+  }))))))), (() => {
+    const monthEntries = entries.filter(e => e.date.slice(0, 7) === fixedExpViewMonth);
+    let homeKwh = 0, homeCost = 0, homeDays = 0, outKwh = 0, outCost = 0, outCredit = 0, outDays = 0;
+    monthEntries.forEach(e => {
+      const oc = e.outsideChargeCost || 0;
+      if (e.homeChargeKwh > 0) {
+        homeKwh += e.homeChargeKwh;
+        homeCost += Math.max(0, (e.fuelCost || 0) - oc);
+        homeDays++;
+      }
+      if (e.outsideChargeKwh > 0) {
+        outKwh += e.outsideChargeKwh;
+        outCost += oc;
+        if (e.outsideChargeByCredit) outCredit += oc;
+        outDays++;
+      }
+    });
+    const total = homeCost + outCost;
+    if (total <= 0 && homeKwh <= 0 && outKwh <= 0) return null;
+    const row = (label, sub, value, color) => React.createElement("div", {
+      className: "flex items-center justify-between text-[11px]"
+    }, React.createElement("span", {
+      style: {
+        color: C.textMuted
+      }
+    }, label, sub && React.createElement("span", {
+      style: {
+        color: C.textFaint
+      }
+    }, " ", sub)), React.createElement("span", {
+      style: {
+        color: color || C.text,
+        fontFamily: "'JetBrains Mono', monospace"
+      }
+    }, value));
+    return React.createElement("div", {
+      className: "mt-4 rounded-xl p-3.5",
+      style: {
+        background: C.panel,
+        border: `1px solid ${C.hairline}`,
+        borderLeft: `3px solid ${C.amber}`
+      }
+    }, React.createElement("div", {
+      className: "mb-2 flex items-center justify-between"
+    }, React.createElement("span", {
+      className: "text-xs font-semibold",
+      style: {
+        color: C.text
+      }
+    }, "⚡ สรุปค่าชาร์จ ", monthLabelThai(fixedExpViewMonth)), React.createElement("span", {
+      className: "text-xs font-semibold",
+      style: {
+        color: C.text,
+        fontFamily: "'JetBrains Mono', monospace"
+      }
+    }, thb(total), " ฿")), React.createElement("div", {
+      className: "flex flex-col gap-1"
+    }, row("🏠 ชาร์จที่บ้าน", `${thb(homeKwh)} kWh · ${homeDays} วัน`, `${thb(homeCost)} ฿`), row("🔌 ชาร์จนอกบ้าน", `${thb(outKwh)} kWh · ${outDays} วัน`, `${thb(outCost)} ฿`), outCredit > 0 && row("💳 จ่ายด้วยบัตรเครดิต (รอจ่ายบิล)", "", `${thb(outCredit)} ฿`, C.blue)), React.createElement("p", {
+      className: "mt-2 text-[10px] leading-relaxed",
+      style: {
+        color: C.textFaint
+      }
+    }, "ยอดนี้สะสมจากที่บันทึกรายวัน และนับเป็นต้นทุนในกำไรรายวันอยู่แล้ว จึงไม่ถูกบวกซ้ำในรายจ่ายคงที่"));
+  })(), React.createElement("div", {
     className: "mt-4 rounded-xl p-3.5",
     style: {
       background: C.panel,
