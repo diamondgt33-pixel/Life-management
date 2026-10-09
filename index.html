@@ -1632,8 +1632,8 @@ function GrabProfitMeter() {
   const [instStartMonth, setInstStartMonth] = useState(todayISO().slice(0, 7));
   const [instWalletId, setInstWalletId] = useState("");
   const [newWalletName, setNewWalletName] = useState("");
-  const [floatAmountInput, setFloatAmountInput] = useState("");
-  const [floatTargetInput, setFloatTargetInput] = useState("1000");
+  const [cashFloatStart, setCashFloatStart] = useState(0);
+  const [cashFloatMonth, setCashFloatMonth] = useState("");
   const [dailyExpWalletId, setDailyExpWalletId] = useState("");
   const [showTransferModal, setShowTransferModal] = useState(false);
   const [showWalletMoveModal, setShowWalletMoveModal] = useState(false);
@@ -1852,6 +1852,44 @@ function GrabProfitMeter() {
           await window.storage.set("toll-wallet-seeded", JSON.stringify(true), false);
         }
       } catch (e) {}
+      try {
+        let cashFloat = null;
+        try {
+          const cf = await window.storage.get("cash-float", false);
+          if (cf && cf.value) cashFloat = JSON.parse(cf.value);
+        } catch (e) {}
+        let ws = [];
+        try {
+          const wRes = await window.storage.get("wallets", false);
+          if (wRes && wRes.value) ws = JSON.parse(wRes.value);
+        } catch (e) {}
+        const oldFloat = ws.find(w => w.isFloatWallet);
+        if (oldFloat) {
+          if (!cashFloat) cashFloat = {
+            amount: oldFloat.floatTarget || 0,
+            month: todayISO().slice(0, 7)
+          };
+          let trs = [];
+          try {
+            const trRes = await window.storage.get("wallet-transfers", false);
+            if (trRes && trRes.value) trs = JSON.parse(trRes.value);
+          } catch (e) {}
+          const funded = trs.some(t => t.walletId === oldFloat.id);
+          const nextWs = funded ? ws.map(w => w.id === oldFloat.id ? {
+            ...w,
+            isFloatWallet: undefined,
+            floatTarget: undefined,
+            name: "เงินสด (ทอน/ทางด่วน)"
+          } : w) : ws.filter(w => !w.isFloatWallet);
+          setWallets(nextWs);
+          await window.storage.set("wallets", JSON.stringify(nextWs), false);
+          await window.storage.set("cash-float", JSON.stringify(cashFloat), false);
+        }
+        if (cashFloat) {
+          setCashFloatStart(cashFloat.amount || 0);
+          setCashFloatMonth(cashFloat.month || "");
+        }
+      } catch (e) {}
       setLoaded(true);
     })();
   }, []);
@@ -2019,7 +2057,7 @@ function GrabProfitMeter() {
       monthDailyExpenses.forEach(e => {
         byCategory[e.category] = (byCategory[e.category] || 0) + (e.amount || 0);
       });
-      const fixedTotal = fixedExpenses.filter(e => isFixedItemActiveInMonth(e, targetYm)).reduce((a, e) => a + (e.amount || 0), 0);
+      const fixedTotal = fixedExpenses.filter(e => !e.costInProfit && isFixedItemActiveInMonth(e, targetYm)).reduce((a, e) => a + (e.amount || 0), 0);
       const totalIncome = grabProfit + extraIncomeTotal;
       const totalExpense = dailyExpenseTotal + fixedTotal;
       return {
@@ -2161,7 +2199,7 @@ function GrabProfitMeter() {
       const uniqueIds = [...new Set(ids)];
       uniqueIds.forEach(id => {
         const item = fixedExpenses.find(e => e.id === id);
-        if (!item) return;
+        if (!item || item.costInProfit) return;
         const isDebtWalletPayment = item.linkedDebtId && item.walletId && item.walletId !== "central";
         if (!isDebtWalletPayment) {
           if (item.walletId && item.walletId !== "central") {
@@ -2231,7 +2269,7 @@ function GrabProfitMeter() {
     };
   }, [entries, extraIncome, tourTrips, walletTransfers, dailyExpenses, maintenanceRecords, paidExpenses, fixedExpenses, walletPoolAdjustment]);
   const autoCreditDebts = useMemo(() => {
-    return fixedExpenses.filter(e => e.installmentTotalMonths > 0 && e.installmentTotalAmount > 0 && !e.linkedDebtId).map(e => {
+    return fixedExpenses.filter(e => !e.costInProfit && e.installmentTotalMonths > 0 && e.installmentTotalAmount > 0 && !e.linkedDebtId).map(e => {
       let ym = e.installmentStartMonth;
       let remaining = e.installmentTotalAmount;
       const monthly = e.amount || 0;
@@ -2635,6 +2673,50 @@ function GrabProfitMeter() {
   const totalIncome = income + (tips || 0) + (incentive || 0) + (turboBonus || 0) + (weeklyTurboBonus || 0);
   const profit = totalIncome - totalCost;
   const costRatio = totalIncome > 0 ? totalCost / totalIncome : 0;
+  const syncChargeItems = (entryList, entryDate) => {
+    const ym = entryDate.slice(0, 7);
+    const dayEntry = entryList.find(x => x.date === entryDate);
+    const outId = `chg-${entryDate}`;
+    const homeId = `chg-home-${ym}`;
+    let homeTotal = 0;
+    entryList.filter(x => x.date.slice(0, 7) === ym && (x.homeChargeKwh || 0) > 0).forEach(x => {
+      homeTotal += Math.max(0, (x.fuelCost || 0) - (x.outsideChargeCost || 0));
+    });
+    homeTotal = Math.round(homeTotal * 100) / 100;
+    const outItem = dayEntry && dayEntry.outsideChargeByCredit && (dayEntry.outsideChargeCost || 0) > 0 ? {
+      id: outId,
+      name: `⚡ ชาร์จนอกบ้าน ${thaiDate(entryDate)} (บัตรเครดิต)`,
+      amount: dayEntry.outsideChargeCost,
+      installmentTotalAmount: dayEntry.outsideChargeCost,
+      installmentTotalMonths: 1,
+      installmentStartMonth: ym,
+      installmentEndMonth: ym,
+      costInProfit: true,
+      linkedChargeDate: entryDate
+    } : null;
+    const homeItem = homeTotal > 0 ? {
+      id: homeId,
+      name: `🏠 ค่าไฟชาร์จรถที่บ้าน ${monthLabelThai(ym)} (สะสมอัตโนมัติ)`,
+      amount: homeTotal,
+      installmentTotalAmount: homeTotal,
+      installmentTotalMonths: 1,
+      installmentStartMonth: ym,
+      installmentEndMonth: ym,
+      costInProfit: true,
+      linkedChargeMonth: ym
+    } : null;
+    setFixedExpenses(prev => {
+      const upsert = (list, id, item) => {
+        const exists = list.some(i => i.id === id);
+        if (!item) return list.filter(i => i.id !== id);
+        return exists ? list.map(i => i.id === id ? {
+          ...i,
+          ...item
+        } : i) : [...list, item];
+      };
+      return upsert(upsert(prev, outId, outItem), homeId, homeItem);
+    });
+  };
   const saveEntry = async () => {
     setSaveError("");
     const entry = {
@@ -2676,6 +2758,7 @@ function GrabProfitMeter() {
     const latestEntries = await readLatestArray("daily-entries", entries);
     const next = [...latestEntries.filter(e => e.date !== date), entry].sort((a, b) => b.date.localeCompare(a.date));
     setEntries(next);
+    syncChargeItems(next, date);
     try {
       await window.storage.set("daily-entries", JSON.stringify(next), false);
       await window.storage.set("settings", JSON.stringify({
@@ -2700,6 +2783,7 @@ function GrabProfitMeter() {
     const latest = await readLatestArray("daily-entries", entries);
     const next = latest.filter(e => e.date !== d);
     setEntries(next);
+    syncChargeItems(next, d);
     try {
       await window.storage.set("daily-entries", JSON.stringify(next), false);
     } catch (e) {
@@ -3172,78 +3256,19 @@ function GrabProfitMeter() {
       reportSaveError(e);
     }
   };
-  const createFloatWallet = async target => {
-    const t = Math.round(Number(target) * 100) / 100;
-    if (!(t > 0)) return;
-    setSaveError("");
-    const latest = await readLatestArray("wallets", wallets);
-    if (latest.some(w => w.isFloatWallet)) return;
-    const next = [...latest, {
-      id: `wal-float-${Date.now()}`,
-      name: "เงินสดตั้งต้น (ทอน/ทางด่วน)",
-      balance: 0,
-      isFloatWallet: true,
-      floatTarget: t
-    }];
-    setWallets(next);
+  const saveCashFloat = async amount => {
+    const amt = Math.round((Number(amount) || 0) * 100) / 100;
+    const month = todayISO().slice(0, 7);
+    setCashFloatStart(amt);
+    setCashFloatMonth(month);
     try {
-      await window.storage.set("wallets", JSON.stringify(next), false);
+      await window.storage.set("cash-float", JSON.stringify({
+        amount: amt,
+        month
+      }), false);
     } catch (e) {
       reportSaveError(e);
     }
-  };
-  const setFloatTarget = async target => {
-    const t = Math.round(Number(target) * 100) / 100;
-    if (!(t > 0)) return;
-    const latest = await readLatestArray("wallets", wallets);
-    const next = latest.map(w => w.isFloatWallet ? {
-      ...w,
-      floatTarget: t
-    } : w);
-    setWallets(next);
-    try {
-      await window.storage.set("wallets", JSON.stringify(next), false);
-    } catch (e) {
-      reportSaveError(e);
-    }
-  };
-  const fundFloat = async amount => {
-    const amt = Math.round(Number(amount) * 100) / 100;
-    const fw = wallets.find(w => w.isFloatWallet);
-    if (!fw || !(amt > 0)) return;
-    setSaveError("");
-    const latest = await readLatestArray("wallets", wallets);
-    const next = latest.map(w => w.id === fw.id ? {
-      ...w,
-      balance: Math.round((w.balance + amt) * 100) / 100
-    } : w);
-    setWallets(next);
-    try {
-      await window.storage.set("wallets", JSON.stringify(next), false);
-    } catch (e) {
-      reportSaveError(e);
-      return;
-    }
-    const latestLogs = await readLatestArray("wallet-transfers", walletTransfers);
-    const nextLogs = [...latestLogs, {
-      id: `wt-${fw.id}-${Date.now()}`,
-      date: todayISO(),
-      walletId: fw.id,
-      amount: amt
-    }];
-    setWalletTransfers(nextLogs);
-    try {
-      await window.storage.set("wallet-transfers", JSON.stringify(nextLogs), false);
-    } catch (e) {
-      reportSaveError(e);
-    }
-  };
-  const useFloat = async (amount, direction) => {
-    const amt = Math.round(Number(amount) * 100) / 100;
-    const fw = wallets.find(w => w.isFloatWallet);
-    if (!fw || !(amt > 0)) return;
-    await adjustWalletBalance(fw.id, direction === "in" ? amt : -amt);
-    setFloatAmountInput("");
   };
   const transferToWallets = async () => {
     setSaveError("");
@@ -3531,6 +3556,10 @@ function GrabProfitMeter() {
       debts,
       walletTransfers,
       walletMoveLogs,
+      cashFloat: {
+        amount: cashFloatStart,
+        month: cashFloatMonth
+      },
       walletPoolAdjustment,
       tourPackages,
       tourTrips,
@@ -3788,6 +3817,12 @@ function GrabProfitMeter() {
           await window.storage.set("wallet-move-logs", JSON.stringify(merged), false);
           restoredParts.push("ประวัติโอนเงินระหว่างกระเป๋า");
         }
+        if (parsed.cashFloat && typeof parsed.cashFloat.amount === "number") {
+          setCashFloatStart(parsed.cashFloat.amount);
+          setCashFloatMonth(parsed.cashFloat.month || "");
+          await window.storage.set("cash-float", JSON.stringify(parsed.cashFloat), false);
+          restoredParts.push("เงินสดตั้งต้น");
+        }
         if (typeof parsed.walletPoolAdjustment === "number") {
           setWalletPoolAdjustment(parsed.walletPoolAdjustment);
           await window.storage.set("wallet-pool-adjustment", JSON.stringify(parsed.walletPoolAdjustment), false);
@@ -3914,6 +3949,12 @@ function GrabProfitMeter() {
     } else if (summaryPeriod === "year") {
       filtered = entries.filter(e => e.date.slice(0, 4) === summaryDate.slice(0, 4));
     }
+    const isEvEntry = e => {
+      const v = vehicles.find(x => x.id === (e.vehicleId || activeVehicleId));
+      return v?.type === "ev" || (e.homeChargeKwh || 0) > 0 || (e.outsideChargeKwh || 0) > 0;
+    };
+    const evCount = filtered.filter(isEvEntry).length;
+    const energyLabel = filtered.length === 0 ? activeEnergyLabel : evCount === filtered.length ? "ค่าไฟ" : evCount === 0 ? "ค่าน้ำมัน" : "ค่าพลังงาน";
     const sum = key => filtered.reduce((acc, e) => acc + (e[key] || 0), 0);
     const totalIncomeSum = filtered.reduce((acc, e) => acc + (e.totalIncome ?? e.income ?? 0), 0);
     const totalCostSum = sum("totalCost");
@@ -3953,6 +3994,7 @@ function GrabProfitMeter() {
       }
     });
     return {
+      energyLabel,
       count: filtered.length,
       totalIncome: totalIncomeSum,
       totalCost: totalCostSum,
@@ -3980,7 +4022,7 @@ function GrabProfitMeter() {
       hasDistanceData: distanceSumForAvg > 0,
       hasTripData: tripSumForAvg > 0
     };
-  }, [entries, summaryDate, summaryPeriod]);
+  }, [entries, summaryDate, summaryPeriod, vehicles, activeVehicleId]);
   const weeklyTurbo = useMemo(() => {
     const thisMonday = mondayOf(todayISO());
     return entries.filter(e => mondayOf(e.date) === thisMonday).reduce((acc, e) => acc + (e.turboCount || 0), 0);
@@ -4237,7 +4279,7 @@ function GrabProfitMeter() {
     const extraIncomeThisMonth = extraIncome.filter(e => e.date.slice(0, 7) === thisMonth).reduce((a, e) => a + (e.amount || 0), 0);
     const profitThisMonth = grabProfitThisMonth + extraIncomeThisMonth;
     const paidIds = paidExpenses[thisMonth] || [];
-    const activeFixedExpenses = fixedExpenses.filter(e => isFixedItemActiveInMonth(e, thisMonth) && !(e.installmentTotalMonths === 1 && paidIds.includes(e.id)));
+    const activeFixedExpenses = fixedExpenses.filter(e => !e.costInProfit && isFixedItemActiveInMonth(e, thisMonth) && !(e.installmentTotalMonths === 1 && paidIds.includes(e.id)));
     const totalFixed = activeFixedExpenses.reduce((a, e) => a + (e.amount || 0), 0);
     const pct = totalFixed > 0 ? profitThisMonth / totalFixed * 100 : 0;
     const remaining = Math.max(0, totalFixed - profitThisMonth);
@@ -4275,7 +4317,7 @@ function GrabProfitMeter() {
     const tourProfitTotal = Math.round(tourTrips.filter(t => t.date.slice(0, 7) === thisMonth).reduce((a, t) => a + (t.profit || 0), 0) * 100) / 100;
     const totalIncome = Math.round((grabProfit + extraIncomeTotal + tourProfitTotal) * 100) / 100;
     const paidIds = paidExpenses[thisMonth] || [];
-    const fixedPaidTotal = Math.round(fixedExpenses.filter(e => paidIds.includes(e.id)).reduce((a, e) => a + (e.amount || 0), 0) * 100) / 100;
+    const fixedPaidTotal = Math.round(fixedExpenses.filter(e => !e.costInProfit && paidIds.includes(e.id)).reduce((a, e) => a + (e.amount || 0), 0) * 100) / 100;
     const dailyExpTotal = Math.round(dailyExpenses.filter(e => e.date.slice(0, 7) === thisMonth).reduce((a, e) => a + (e.amount || 0), 0) * 100) / 100;
     const totalExpense = Math.round((fixedPaidTotal + dailyExpTotal) * 100) / 100;
     const net = Math.round((totalIncome - totalExpense) * 100) / 100;
@@ -4648,7 +4690,7 @@ function GrabProfitMeter() {
     "--c-hero-amber": "linear-gradient(165deg, #FFFFFF 0%, #FFF8EB 100%)",
     "--c-hero-red": "linear-gradient(165deg, #FFFFFF 0%, #FDEEEC 100%)"
   };
-  const CHAT_SUGGESTIONS = ["กำไรวันนี้เท่าไหร่", "กำไรเดือนนี้เท่าไหร่", "รายจ่ายทั่วไปเดือนนี้เท่าไหร่", "รายได้พิเศษเดือนนี้เท่าไหร่", "รายจ่ายรายเดือนครอบคลุมกี่%", "เป้าหมายเดือนนี้ถึงไหนแล้ว", "ค่าน้ำมันกี่กม./ลิตร", "ค่าซ่อมบำรุงรวมเท่าไหร่", "วันนี้ขับไปกี่ชั่วโมง", "สัปดาห์นี้เทอร์โบกี่รอบ", "วันไหนกำไรดีที่สุด"];
+  const CHAT_SUGGESTIONS = ["กำไรวันนี้เท่าไหร่", "กำไรเดือนนี้เท่าไหร่", "รายจ่ายทั่วไปเดือนนี้เท่าไหร่", "รายได้พิเศษเดือนนี้เท่าไหร่", "รายจ่ายรายเดือนครอบคลุมกี่%", "เป้าหมายเดือนนี้ถึงไหนแล้ว", isActiveVehicleEV ? "ค่าไฟกี่กม./kWh" : "ค่าน้ำมันกี่กม./ลิตร", "ค่าซ่อมบำรุงรวมเท่าไหร่", "วันนี้ขับไปกี่ชั่วโมง", "สัปดาห์นี้เทอร์โบกี่รอบ", "วันไหนกำไรดีที่สุด"];
   const answerChatQuestion = rawText => {
     const q = rawText.trim();
     if (!q) return null;
@@ -4680,9 +4722,9 @@ function GrabProfitMeter() {
     if (/รายจ่ายรายเดือน|รายจ่ายคงที่|ครอบคลุม/.test(q)) {
       return `รายจ่ายคงที่เดือนนี้ (${thb(monthlyCoverage.totalFixed)} บาท) ถูกครอบคลุมไปแล้ว ${Math.round(monthlyCoverage.pct)}% จากกำไรที่ทำได้ ${thb(monthlyCoverage.profitThisMonth)} บาทครับ`;
     }
-    if (/น้ำมัน/.test(q)) {
-      if (!fuelEfficiencySummary.hasData) return "ยังไม่มีข้อมูลจำนวนลิตรที่เติมเลยครับ ลองกรอกตอนเติมน้ำมันครั้งถัดไปดูนะครับ";
-      return `ประสิทธิภาพน้ำมันเฉลี่ย ${fuelEfficiencySummary.avgKmPerLiter.toFixed(2)} กม./ลิตร จากระยะทางรวม ${thb(fuelEfficiencySummary.totalKm)} กม.ครับ`;
+    if (/น้ำมัน|ค่าไฟ|kwh/i.test(q)) {
+      if (!fuelEfficiencySummary.hasData) return isActiveVehicleEV ? "ยังไม่มีข้อมูลจำนวน kWh ที่ชาร์จเลยครับ ลองกรอกตอนชาร์จครั้งถัดไปดูนะครับ" : "ยังไม่มีข้อมูลจำนวนลิตรที่เติมเลยครับ ลองกรอกตอนเติมน้ำมันครั้งถัดไปดูนะครับ";
+      return `ประสิทธิภาพ${isActiveVehicleEV ? "ไฟฟ้า" : "น้ำมัน"}เฉลี่ย ${fuelEfficiencySummary.avgKmPerLiter.toFixed(2)} ${activeEfficiencyUnit} จากระยะทางรวม ${thb(fuelEfficiencySummary.totalKm)} กม.ครับ`;
     }
     if (/ซ่อมบำรุง|ซ่อมรถ/.test(q)) {
       if (maintenanceSummary.count === 0) return "ยังไม่มีรายการซ่อมบำรุงเลยครับ";
@@ -4722,24 +4764,23 @@ function GrabProfitMeter() {
     }]);
     setChatInput("");
   };
+  const carryInfo = (() => {
+    const ym = date.slice(0, 7);
+    const prev = [...entries].filter(e => e.date < date && e.date.slice(0, 7) === ym && (e.cashEnd || 0) > 0).sort((x, y) => y.date.localeCompare(x.date))[0];
+    if (prev) return {
+      amount: prev.cashEnd,
+      source: "carry",
+      from: prev.date
+    };
+    return {
+      amount: cashFloatStart || 0,
+      source: "start",
+      from: ""
+    };
+  })();
   const floatCard = (() => {
-    const fw = wallets.find(w => w.isFloatWallet);
-    const target = fw ? fw.floatTarget || 0 : 0;
-    const bal = fw ? fw.balance || 0 : 0;
-    const missing = Math.max(0, Math.round((target - bal) * 100) / 100);
-    const pct = target > 0 ? Math.max(0, Math.min(100, bal / target * 100)) : 0;
-    const amtNum = Number(floatAmountInput) || 0;
-    const btn = (label, onClick, bg, color) => React.createElement("button", {
-      type: "button",
-      onClick,
-      disabled: !(amtNum > 0),
-      className: "flex-1 rounded-lg py-2 text-[11px] font-semibold",
-      style: {
-        background: bg,
-        color,
-        opacity: amtNum > 0 ? 1 : 0.45
-      }
-    }, label);
+    const monthNow = date.slice(0, 7);
+    const staleStart = carryInfo.source === "start" && cashFloatStart > 0 && cashFloatMonth && cashFloatMonth !== monthNow;
     return React.createElement("div", {
       className: "mb-4 rounded-xl p-3.5",
       style: {
@@ -4752,112 +4793,56 @@ function GrabProfitMeter() {
       style: {
         color: C.text
       }
-    }, "🪙 เงินสดตั้งต้น (ทอน + ทางด่วน)"), !fw ? React.createElement("div", {
-      className: "flex flex-col gap-2"
-    }, React.createElement("p", {
-      className: "text-[11px] leading-relaxed",
-      style: {
-        color: C.textFaint
-      }
-    }, "เงินสดที่เตรียมไว้ในรถสำหรับทอนค่าโดยสารและจ่ายค่าทางด่วน — ไม่นับเป็นรายจ่ายและไม่กระทบกำไร เงินที่ใช้ไปจะกลับมาเมื่อกด \"รับเงินคืน\""), React.createElement("div", {
-      className: "flex items-center gap-1.5"
-    }, React.createElement("input", {
-      type: "number",
-      inputMode: "decimal",
-      value: floatTargetInput,
-      onChange: e => setFloatTargetInput(e.target.value),
-      placeholder: "ยอดตั้งต้น เช่น 1000",
-      className: "min-w-0 flex-1 rounded-lg px-2.5 py-2 text-right text-xs",
-      style: {
-        background: C.bgSoft,
-        color: C.text,
-        border: `1px solid ${C.hairline}`,
-        fontFamily: "'JetBrains Mono', monospace"
-      }
-    }), React.createElement("button", {
-      type: "button",
-      onClick: () => createFloatWallet(floatTargetInput),
-      className: "shrink-0 rounded-lg px-3 py-2 text-xs font-semibold",
-      style: {
-        background: C.amber,
-        color: "#FFFFFF"
-      }
-    }, "ตั้งค่า"))) : React.createElement("div", {
-      className: "flex flex-col gap-2"
-    }, React.createElement("div", {
+    }, "💵 เงินสดตั้งต้น (ทอน + ทางด่วน)"), React.createElement("div", {
       className: "flex items-baseline justify-between"
     }, React.createElement("span", {
       className: "text-lg font-semibold",
       style: {
-        color: bal < 0 ? C.red : C.text,
+        color: C.text,
         fontFamily: "'JetBrains Mono', monospace"
       }
-    }, thb(bal), " ฿"), React.createElement("span", {
+    }, thb(carryInfo.amount), " ฿"), React.createElement("span", {
       className: "text-[11px]",
       style: {
         color: C.textFaint
       }
-    }, "ยอดตั้งต้น ", thb(target), " ฿")), React.createElement("div", {
-      className: "h-2 w-full overflow-hidden rounded-full",
+    }, carryInfo.source === "carry" ? `ยกมาจากเงินสดคงเหลือวันที่ ${thaiDateShort(carryInfo.from)}` : "ตั้งต้นของเดือนนี้")), React.createElement("p", {
+      className: "mt-1 text-[10px] leading-relaxed",
       style: {
-        background: C.bgSoft
+        color: C.textFaint
       }
-    }, React.createElement("div", {
-      className: "h-full rounded-full",
+    }, "ระบบยกเงินสดคงเหลือของเมื่อวานมาเป็นเงินตั้งต้นของวันนี้ให้เอง ไม่ต้องกรอกใหม่ — กรอกยอดตั้งต้นใหม่เฉพาะตอนขึ้นเดือนใหม่"), staleStart && React.createElement("p", {
+      className: "mt-1 text-[11px] font-medium",
       style: {
-        width: `${pct}%`,
-        background: missing > 0 ? C.amber : C.green,
-        transition: "width 0.3s ease"
+        color: "#92400E"
       }
-    })), missing > 0 ? React.createElement("button", {
-      type: "button",
-      onClick: () => fundFloat(missing),
-      className: "w-full rounded-lg py-2 text-xs font-semibold",
-      style: {
-        background: C.greenDim,
-        color: C.greenDeep
-      }
-    }, `➕ เติมให้ครบ (${thb(missing)} ฿ จากยังไม่ได้จัดสรร)`) : React.createElement("p", {
-      className: "text-[11px]",
-      style: {
-        color: C.greenDeep
-      }
-    }, "✅ เงินสดครบตามยอดตั้งต้น"), React.createElement("input", {
-      type: "number",
-      inputMode: "decimal",
-      value: floatAmountInput,
-      onChange: e => setFloatAmountInput(e.target.value),
-      placeholder: "จำนวนเงิน (บาท)",
-      className: "w-full rounded-lg px-2.5 py-2 text-right text-xs",
-      style: {
-        background: C.bgSoft,
-        color: C.text,
-        border: `1px solid ${C.hairline}`,
-        fontFamily: "'JetBrains Mono', monospace"
-      }
-    }), React.createElement("div", {
-      className: "flex gap-1.5"
-    }, btn("🛣️ จ่ายทางด่วน", () => useFloat(floatAmountInput, "out"), C.amberDim, "#92400E"), btn("🪙 ทอนผู้โดยสาร", () => useFloat(floatAmountInput, "out"), C.amberDim, "#92400E"), btn("↩️ รับเงินคืน", () => useFloat(floatAmountInput, "in"), C.greenDim, C.greenDeep)), React.createElement("div", {
-      className: "flex items-center gap-1.5"
+    }, "⚠️ ยอดตั้งต้นนี้ตั้งไว้ตั้งแต่เดือนก่อน — ขึ้นเดือนใหม่แล้ว ใส่ยอดตั้งต้นใหม่ด้านล่างได้เลย"), React.createElement("div", {
+      className: "mt-2 flex items-center gap-1.5"
     }, React.createElement("span", {
-      className: "text-[10px]",
+      className: "text-[11px]",
       style: {
-        color: C.textFaint
+        color: C.textMuted
       }
-    }, "แก้ยอดตั้งต้น:"), React.createElement("input", {
+    }, "ยอดตั้งต้นต้นเดือน:"), React.createElement("input", {
       type: "number",
       inputMode: "decimal",
-      defaultValue: target,
-      key: `ft-${target}`,
-      onBlur: e => setFloatTarget(e.target.value),
-      className: "w-24 rounded-lg px-2 py-1 text-right text-[11px]",
+      defaultValue: cashFloatStart || "",
+      key: `cfs-${cashFloatStart}`,
+      placeholder: "เช่น 1000",
+      onBlur: e => saveCashFloat(e.target.value),
+      className: "w-28 rounded-lg px-2 py-1.5 text-right text-xs",
       style: {
         background: C.bgSoft,
         color: C.text,
         border: `1px solid ${C.hairline}`,
         fontFamily: "'JetBrains Mono', monospace"
       }
-    }))));
+    }), React.createElement("span", {
+      className: "text-[11px]",
+      style: {
+        color: C.textFaint
+      }
+    }, "บาท")));
   })();
   return React.createElement("div", {
     className: "min-h-screen w-full flex justify-center",
@@ -5239,7 +5224,7 @@ function GrabProfitMeter() {
     size: 168,
     thickness: 24,
     segments: [{
-      label: "ค่าน้ำมัน",
+      label: periodSummary.energyLabel,
       value: periodSummary.fuelCost,
       color: C.amber
     }, {
@@ -5315,7 +5300,7 @@ function GrabProfitMeter() {
       background: C.amber,
       display: "inline-block"
     }
-  }), "ค่าน้ำมัน ", thb(periodSummary.fuelCost), " ฿"), React.createElement("span", {
+  }), periodSummary.energyLabel, " ", thb(periodSummary.fuelCost), " ฿"), React.createElement("span", {
     className: "flex items-center gap-1.5"
   }, React.createElement("span", {
     style: {
@@ -5417,7 +5402,7 @@ function GrabProfitMeter() {
     style: {
       color: C.textFaint
     }
-  }, "ค่าน้ำมัน"), React.createElement("div", {
+  }, periodSummary.energyLabel), React.createElement("div", {
     className: "text-sm font-medium",
     style: {
       color: C.amber,
@@ -6094,8 +6079,7 @@ function GrabProfitMeter() {
       border: `1px solid ${C.hairline}`
     }
   }))), (() => {
-    const fw = wallets.find(w => w.isFloatWallet);
-    const openingEff = openingFloat > 0 ? openingFloat : fw ? fw.floatTarget || 0 : 0;
+    const openingEff = openingFloat > 0 ? openingFloat : carryInfo.amount;
     const hasCash = cashEnd > 0;
     const cashFromPax = hasCash ? Math.round((cashEnd - openingEff + (tollPaid || 0)) * 100) / 100 : 0;
     const grabIncome = (income || 0) + (tips || 0);
@@ -6152,7 +6136,7 @@ function GrabProfitMeter() {
       suffix: "บาท",
       value: openingFloat,
       onChange: setOpeningFloat,
-      placeholder: fw ? String(fw.floatTarget || 0) : "0"
+      placeholder: thb(carryInfo.amount) + (carryInfo.source === "carry" ? " (ยกจากเมื่อวาน)" : " (ตั้งต้นเดือน)")
     }), React.createElement(Field, {
       label: "เงินที่ Grab โอนเข้าจริง",
       suffix: "บาท",
@@ -6248,7 +6232,7 @@ function GrabProfitMeter() {
   }, React.createElement(Icon, {
     name: "fuel",
     size: 10
-  }), " น้ำมัน/กม."), React.createElement("div", {
+  }), " ", periodSummary.energyLabel, "/กม."), React.createElement("div", {
     className: "text-sm font-semibold",
     style: {
       color: C.amber,
@@ -6312,7 +6296,7 @@ function GrabProfitMeter() {
   }, React.createElement(Icon, {
     name: "fuel",
     size: 10
-  }), " น้ำมัน/รอบ"), React.createElement("div", {
+  }), " ", periodSummary.energyLabel, "/รอบ"), React.createElement("div", {
     className: "text-sm font-semibold",
     style: {
       color: C.amber,
@@ -7635,7 +7619,7 @@ function GrabProfitMeter() {
       color: chartMetric === m.key ? m.color : C.textFaint,
       border: `1px solid ${chartMetric === m.key ? m.color + "55" : C.hairline}`
     }
-  }, m.label))), React.createElement(MiniBarChart, {
+  }, m.key === "fuelCost" ? activeEnergyLabel : m.label))), React.createElement(MiniBarChart, {
     data: chartData,
     metric: activeMetric
   })), (weekCompare.thisWeek.count > 0 || weekCompare.lastWeek.count > 0) && React.createElement("div", {
@@ -8488,6 +8472,7 @@ function GrabProfitMeter() {
     return showCompletedInstallments || !isCompletedInstallment;
   }).map(item => {
     const isPaid = (paidExpenses[fixedExpViewMonth] || []).includes(item.id);
+    const isMemo = !!item.costInProfit;
     const isInstallment = !!item.installmentEndMonth;
     const activeNow = isFixedItemActiveInMonth(item, fixedExpViewMonth);
     const monthsElapsed = isInstallment ? Math.max(1, Math.min(item.installmentTotalMonths, (Number(fixedExpViewMonth.slice(0, 4)) - Number(item.installmentStartMonth.slice(0, 4))) * 12 + (Number(fixedExpViewMonth.slice(5, 7)) - Number(item.installmentStartMonth.slice(5, 7))) + 1)) : 0;
@@ -8519,7 +8504,7 @@ function GrabProfitMeter() {
       style: {
         color: activeNow ? C.blue : C.textFaint
       }
-    }, "💳", " ", activeNow ? `ผ่อนเดือนที่ ${monthsElapsed}/${item.installmentTotalMonths} · จ่ายแล้ว ${monthsPaidCount} งวด เหลือ ${thb(remainingBalance)} ฿ (รวม ${thb(item.installmentTotalAmount)} ฿)` : fixedExpViewMonth < item.installmentStartMonth ? `ยังไม่เริ่มผ่อน (เริ่ม ${monthLabelThai(item.installmentStartMonth)})` : `ผ่อนครบแล้ว (จบ ${monthLabelThai(item.installmentEndMonth)})`), isInstallment && activeNow && React.createElement("div", {
+    }, "💳", " ", isMemo ? "นับเป็นต้นทุนรายวันแล้ว (ไม่หักซ้ำ) — ติ๊กเมื่อจ่ายบิลแล้ว" : activeNow ? `ผ่อนเดือนที่ ${monthsElapsed}/${item.installmentTotalMonths} · จ่ายแล้ว ${monthsPaidCount} งวด เหลือ ${thb(remainingBalance)} ฿ (รวม ${thb(item.installmentTotalAmount)} ฿)` : fixedExpViewMonth < item.installmentStartMonth ? `ยังไม่เริ่มผ่อน (เริ่ม ${monthLabelThai(item.installmentStartMonth)})` : `ผ่อนครบแล้ว (จบ ${monthLabelThai(item.installmentEndMonth)})`), isInstallment && activeNow && !isMemo && React.createElement("div", {
       className: "flex items-center gap-1.5 pl-7"
     }, React.createElement("input", {
       type: "number",
@@ -8612,7 +8597,7 @@ function GrabProfitMeter() {
       style: {
         color: C.blue
       }
-    }, "🔗 ผูกกับรายการหนี้สิน — พอติ๊กจ่ายแล้ว ยอดหนี้จะลดลงให้อัตโนมัติ"), wallets.length > 0 && React.createElement("div", {
+    }, "🔗 ผูกกับรายการหนี้สิน — พอติ๊กจ่ายแล้ว ยอดหนี้จะลดลงให้อัตโนมัติ"), wallets.length > 0 && !isMemo && React.createElement("div", {
       className: "flex flex-wrap items-center gap-1.5 pl-7"
     }, React.createElement("span", {
       className: "text-[10px]",
@@ -11257,7 +11242,7 @@ function GrabProfitMeter() {
     style: {
       background: C.bgSoft
     }
-  }, [["ค่าน้ำมัน", viewingDayDetail.fuelCost], ["ค่าประกัน", viewingDayDetail.insuranceCost], ["ภาษีอินเซนทีฟ+เทอร์โบ 3%", viewingDayDetail.incentiveTax], ["ค่าใช้จ่ายอื่น", viewingDayDetail.otherCost]].filter(([, v]) => v).map(([label, v]) => React.createElement("div", {
+  }, [[(viewingDayDetail.homeChargeKwh || 0) > 0 || (viewingDayDetail.outsideChargeKwh || 0) > 0 || vehicles.find(v => v.id === (viewingDayDetail.vehicleId || activeVehicleId))?.type === "ev" ? "ค่าไฟ" : "ค่าน้ำมัน", viewingDayDetail.fuelCost], ["ค่าประกัน", viewingDayDetail.insuranceCost], ["ภาษีอินเซนทีฟ+เทอร์โบ 3%", viewingDayDetail.incentiveTax], ["ค่าใช้จ่ายอื่น", viewingDayDetail.otherCost]].filter(([, v]) => v).map(([label, v]) => React.createElement("div", {
     key: label,
     className: "flex items-center justify-between text-xs"
   }, React.createElement("span", {
