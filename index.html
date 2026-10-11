@@ -3993,7 +3993,53 @@ function GrabProfitMeter() {
         incomeSumForTrips += e.totalIncome ?? e.income ?? 0;
       }
     });
+    const ascEntries = [...entries].sort((a, b) => a.date.localeCompare(b.date));
+    const openingFor = e => {
+      if ((e.openingFloat || 0) > 0) return e.openingFloat;
+      const ym = e.date.slice(0, 7);
+      let prev = null;
+      for (const x of ascEntries) {
+        if (x.date >= e.date) break;
+        if (x.date.slice(0, 7) === ym && (x.cashEnd || 0) > 0) prev = x;
+      }
+      return prev ? prev.cashEnd : cashFloatStart || 0;
+    };
+    const rc = {
+      daysCash: 0,
+      daysFull: 0,
+      income: 0,
+      cash: 0,
+      direct: 0,
+      toll: 0,
+      expected: 0,
+      actual: 0,
+      actualAll: 0
+    };
+    filtered.forEach(e => {
+      if ((e.grabTransfer || 0) > 0) rc.actualAll += e.grabTransfer;
+      if ((e.cashEnd || 0) > 0) {
+        rc.daysCash++;
+        const inc = (e.income || 0) + (e.tips || 0);
+        const toll = e.tollPaid || 0;
+        const cashPax = e.cashEnd - openingFor(e) + toll;
+        const direct = e.directTransfer || 0;
+        if ((e.grabTransfer || 0) > 0) {
+          rc.daysFull++;
+          rc.income += inc;
+          rc.cash += cashPax;
+          rc.direct += direct;
+          rc.toll += toll;
+          rc.expected += inc - cashPax - direct + toll;
+          rc.actual += e.grabTransfer;
+        }
+      }
+    });
+    Object.keys(rc).forEach(k => {
+      if (k !== "daysCash" && k !== "daysFull") rc[k] = Math.round(rc[k] * 100) / 100;
+    });
+    const recon = rc.daysCash > 0 || rc.actualAll > 0 ? rc : null;
     return {
+      recon,
       energyLabel,
       count: filtered.length,
       totalIncome: totalIncomeSum,
@@ -4022,7 +4068,7 @@ function GrabProfitMeter() {
       hasDistanceData: distanceSumForAvg > 0,
       hasTripData: tripSumForAvg > 0
     };
-  }, [entries, summaryDate, summaryPeriod, vehicles, activeVehicleId]);
+  }, [entries, summaryDate, summaryPeriod, vehicles, activeVehicleId, cashFloatStart]);
   const weeklyTurbo = useMemo(() => {
     const thisMonday = mondayOf(todayISO());
     return entries.filter(e => mondayOf(e.date) === thisMonday).reduce((acc, e) => acc + (e.turboCount || 0), 0);
@@ -5447,7 +5493,54 @@ function GrabProfitMeter() {
   }, React.createElement(Icon, {
     name: "zap",
     size: 11
-  }), " เทอร์โบ ", periodSummary.turboCount, " รอบ")))), React.createElement("label", {
+  }), " เทอร์โบ ", periodSummary.turboCount, " รอบ")), periodSummary.recon && (() => {
+    const rc = periodSummary.recon;
+    const diff = Math.round((rc.actual - rc.expected) * 100) / 100;
+    const ok = Math.abs(diff) <= 5 * Math.max(rc.daysFull, 1);
+    const row = (label, value, color, bold) => React.createElement("div", {
+      className: "flex items-center justify-between text-[11px]"
+    }, React.createElement("span", {
+      style: {
+        color: C.textMuted,
+        fontWeight: bold ? 600 : 400
+      }
+    }, label), React.createElement("span", {
+      style: {
+        color: color || C.text,
+        fontWeight: bold ? 600 : 400,
+        fontFamily: "'JetBrains Mono', monospace"
+      }
+    }, value));
+    return React.createElement("div", {
+      className: "mt-3 rounded-lg p-3",
+      style: {
+        background: C.bgSoft,
+        border: `1px solid ${C.hairline}`
+      }
+    }, React.createElement("p", {
+      className: "mb-1.5 text-[12px] font-semibold",
+      style: {
+        color: C.text
+      }
+    }, "🧾 เทียบกับเงินจริงที่ได้รับจาก Grab"), rc.daysFull > 0 ? React.createElement("div", {
+      className: "flex flex-col gap-1"
+    }, row(`รายได้ Grab (${rc.daysFull} วันที่กรอกครบ)`, `${thb(rc.income)} ฿`), row("− เงินสดจากผู้โดยสาร", `${thb(rc.cash)} ฿`), rc.direct > 0 && row("− ผู้โดยสารโอนตรง", `${thb(rc.direct)} ฿`), row("+ ค่าทางด่วนที่สำรองจ่าย", `${thb(rc.toll)} ฿`), row("Grab ควรโอนให้", `${thb(rc.expected)} ฿`, C.greenDeep, true), row("Grab โอนจริง", `${thb(rc.actual)} ฿`, C.text, true), row("ส่วนต่าง", `${diff > 0 ? "+" : ""}${thb(diff)} ฿`, ok ? C.green : C.red, true)) : React.createElement("p", {
+      className: "text-[11px]",
+      style: {
+        color: C.textFaint
+      }
+    }, "ยังไม่มีวันที่กรอกทั้งเงินสดคงเหลือและเงินที่ Grab โอนครบ จึงยังเทียบไม่ได้"), rc.actualAll > 0 && rc.actualAll !== rc.actual && React.createElement("p", {
+      className: "mt-1.5 text-[10px]",
+      style: {
+        color: C.textFaint
+      }
+    }, "เงินที่ Grab โอนรวมทั้งช่วง (ทุกวันที่กรอก) ", thb(rc.actualAll), " ฿"), rc.daysFull > 0 && React.createElement("p", {
+      className: "mt-1.5 text-[10px] leading-relaxed",
+      style: {
+        color: ok ? C.greenDeep : "#92400E"
+      }
+    }, ok ? "✅ ยอดโอนตรงกับที่ควรได้" : diff < 0 ? `⚠️ Grab โอนขาดสะสม ${thb(Math.abs(diff))} ฿ — เปิดดูทีละวันที่การ์ดเช็คเงินสดเพื่อหาวันที่ต่าง` : `ℹ️ Grab โอนเกินสะสม ${thb(diff)} ฿ — อาจรวมโบนัส/ยอดค้างจากวันก่อน`));
+  })())), React.createElement("label", {
     className: "mt-4 flex items-center gap-2 mb-4 rounded-lg px-3 py-2.5",
     style: {
       background: C.panel,
