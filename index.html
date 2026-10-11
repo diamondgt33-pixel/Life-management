@@ -1554,6 +1554,8 @@ function GrabProfitMeter() {
   const [openingFloat, setOpeningFloat] = useState(0);
   const [grabTransfer, setGrabTransfer] = useState(0);
   const [directTransfer, setDirectTransfer] = useState(0);
+  const [batteryStart, setBatteryStart] = useState(0);
+  const [batteryEnd, setBatteryEnd] = useState(0);
   const [vehicles, setVehicles] = useState(DEFAULT_VEHICLES);
   const [activeVehicleId, setActiveVehicleId] = useState("default");
   const [formVehicleId, setFormVehicleId] = useState("default");
@@ -2176,13 +2178,32 @@ function GrabProfitMeter() {
   const activeEnergyUnitShort = isActiveVehicleEV ? "kWh" : "ลิตร";
   const activeEfficiencyUnit = isActiveVehicleEV ? "กม./kWh" : "กม./ลิตร";
   const homeChargeCost = Math.round((homeChargeKwh || 0) * (homeChargeTouPeriod === "onpeak" ? touOnPeakRate : homeChargeTouPeriod === "normal" ? normalHomeRate : touOffPeakRate) * 100) / 100;
+  const formVehicleCap = formVehicle?.batteryKwh || 0;
+  const batteryMode = isFormVehicleEV && formVehicleCap > 0 && batteryStart > 0 && batteryEnd > 0 && batteryStart > batteryEnd;
+  const energyUsedKwh = batteryMode ? Math.round((batteryStart - batteryEnd) / 100 * formVehicleCap * 100) / 100 : 0;
+  const bChargedKwh = (homeChargeKwh || 0) + (outsideChargeKwh || 0);
+  const bChargedCost = homeChargeCost + (outsideChargeCost || 0);
+  const chargePrice = bChargedKwh > 0 ? bChargedCost / bChargedKwh : 0;
+  const lastChargePrice = (() => {
+    const c = [...entries].filter(e => e.date < date && (e.vehicleId || "") === (formVehicleId || "") && (e.chargePricePerKwh > 0 || ((e.homeChargeKwh || 0) + (e.outsideChargeKwh || 0) > 0 && e.fuelLiters > 0))).sort((x, y) => y.date.localeCompare(x.date))[0];
+    if (c) return c.chargePricePerKwh > 0 ? c.chargePricePerKwh : c.fuelCost / c.fuelLiters;
+    return normalHomeRate || 4.4;
+  })();
+  const batteryPriceForDay = bChargedKwh > 0 ? chargePrice : lastChargePrice;
+  const batteryDayCost = Math.round(energyUsedKwh * batteryPriceForDay * 100) / 100;
+  const pendingBatteryDays = entries.filter(e => e.energyProvisional && e.date < date && (e.vehicleId || "") === (formVehicleId || "")).length;
   useEffect(() => {
     if (!isFormVehicleEV) return;
+    if (batteryMode) {
+      setFuelCost(batteryDayCost);
+      setFuelLiters(energyUsedKwh);
+      return;
+    }
     const combinedCost = Math.round((homeChargeCost + (outsideChargeCost || 0)) * 100) / 100;
     const combinedKwh = Math.round(((homeChargeKwh || 0) + (outsideChargeKwh || 0)) * 100) / 100;
     setFuelCost(combinedCost);
     setFuelLiters(combinedKwh);
-  }, [isFormVehicleEV, homeChargeKwh, homeChargeTouPeriod, outsideChargeKwh, outsideChargeCost, touOnPeakRate, touOffPeakRate, normalHomeRate]);
+  }, [isFormVehicleEV, homeChargeKwh, homeChargeTouPeriod, outsideChargeKwh, outsideChargeCost, touOnPeakRate, touOffPeakRate, normalHomeRate, batteryMode, batteryDayCost, energyUsedKwh]);
   const walletPool = useMemo(() => {
     const thisMonth = todayISO().slice(0, 7);
     const lifetimeProfit = entries.reduce((a, e) => a + (e.profit || 0), 0);
@@ -2601,6 +2622,8 @@ function GrabProfitMeter() {
       setOpeningFloat(existing.openingFloat || 0);
       setGrabTransfer(existing.grabTransfer || 0);
       setDirectTransfer(existing.directTransfer || 0);
+      setBatteryStart(existing.batteryStart || 0);
+      setBatteryEnd(existing.batteryEnd || 0);
       setFormVehicleId(existing.vehicleId || activeVehicleId);
       setOtherCost(existing.otherCost || 0);
       setOtherLabel(existing.otherLabel || "");
@@ -2627,6 +2650,9 @@ function GrabProfitMeter() {
       setOpeningFloat(0);
       setGrabTransfer(0);
       setDirectTransfer(0);
+      setBatteryEnd(0);
+      const latestPrevBattery = [...entries].filter(e => e.date < date && (e.batteryEnd || 0) > 0).sort((x, y) => y.date.localeCompare(x.date))[0];
+      setBatteryStart(latestPrevBattery && !((latestPrevBattery.homeChargeKwh || 0) > 0 || (latestPrevBattery.outsideChargeKwh || 0) > 0) ? latestPrevBattery.batteryEnd : 0);
       setFormVehicleId(activeVehicleId);
       setOtherCost(0);
       setOtherLabel("");
@@ -2680,7 +2706,7 @@ function GrabProfitMeter() {
     const homeId = `chg-home-${ym}`;
     let homeTotal = 0;
     entryList.filter(x => x.date.slice(0, 7) === ym && (x.homeChargeKwh || 0) > 0).forEach(x => {
-      homeTotal += Math.max(0, (x.fuelCost || 0) - (x.outsideChargeCost || 0));
+      homeTotal += x.homeChargeCostPaid !== undefined ? x.homeChargeCostPaid : Math.max(0, (x.fuelCost || 0) - (x.outsideChargeCost || 0));
     });
     homeTotal = Math.round(homeTotal * 100) / 100;
     const outItem = dayEntry && dayEntry.outsideChargeByCredit && (dayEntry.outsideChargeCost || 0) > 0 ? {
@@ -2738,6 +2764,12 @@ function GrabProfitMeter() {
       outsideChargeKwh: isFormVehicleEV && outsideChargeKwh > 0 ? outsideChargeKwh : undefined,
       outsideChargeCost: isFormVehicleEV && outsideChargeKwh > 0 ? outsideChargeCost : undefined,
       outsideChargeByCredit: isFormVehicleEV && outsideChargeKwh > 0 && outsideChargeCost > 0 && outsideChargeByCredit ? true : undefined,
+      homeChargeCostPaid: isFormVehicleEV && homeChargeKwh > 0 ? homeChargeCost : undefined,
+      batteryStart: batteryMode ? batteryStart : undefined,
+      batteryEnd: batteryMode ? batteryEnd : undefined,
+      energyUsedKwh: batteryMode ? energyUsedKwh : undefined,
+      chargePricePerKwh: isFormVehicleEV && bChargedKwh > 0 ? Math.round(chargePrice * 10000) / 10000 : undefined,
+      energyProvisional: batteryMode && bChargedKwh === 0 ? true : undefined,
       tollPaid: tollPaid > 0 ? tollPaid : undefined,
       cashEnd: cashEnd > 0 ? cashEnd : undefined,
       openingFloat: openingFloat > 0 ? openingFloat : undefined,
@@ -2756,7 +2788,20 @@ function GrabProfitMeter() {
       profit
     };
     const latestEntries = await readLatestArray("daily-entries", entries);
-    const next = [...latestEntries.filter(e => e.date !== date), entry].sort((a, b) => b.date.localeCompare(a.date));
+    const next0 = [...latestEntries.filter(e => e.date !== date), entry].sort((a, b) => b.date.localeCompare(a.date));
+    const next = isFormVehicleEV && bChargedKwh > 0 && chargePrice > 0 ? next0.map(e => {
+      if (!(e.energyProvisional && e.date < date && (e.vehicleId || "") === (entry.vehicleId || ""))) return e;
+      const newFuel = Math.round((e.energyUsedKwh || 0) * chargePrice * 100) / 100;
+      const delta = newFuel - (e.fuelCost || 0);
+      return {
+        ...e,
+        fuelCost: newFuel,
+        totalCost: Math.round(((e.totalCost || 0) + delta) * 100) / 100,
+        profit: Math.round(((e.profit || 0) - delta) * 100) / 100,
+        energyProvisional: undefined,
+        energySettled: true
+      };
+    }) : next0;
     setEntries(next);
     syncChargeItems(next, date);
     try {
@@ -5870,7 +5915,30 @@ function GrabProfitMeter() {
     name: "trash",
     size: 14,
     color: C.textFaint
-  }))), React.createElement("div", {
+  }))), v.type === "ev" && React.createElement("label", {
+    className: "flex items-center gap-2 text-[11px]"
+  }, React.createElement("span", {
+    style: {
+      color: C.textMuted
+    }
+  }, "🔋 ความจุแบตเตอรี่ใช้งานได้"), React.createElement("input", {
+    type: "number",
+    inputMode: "decimal",
+    value: v.batteryKwh || "",
+    onChange: e => updateVehicle(v.id, "batteryKwh", e.target.value === "" ? undefined : Number(e.target.value)),
+    placeholder: "เช่น 87.5",
+    className: "w-24 rounded-md px-2 py-1 text-right text-[11px]",
+    style: {
+      background: C.bgSoft,
+      color: C.text,
+      border: `1px solid ${C.hairline}`,
+      fontFamily: "'JetBrains Mono', monospace"
+    }
+  }), React.createElement("span", {
+    style: {
+      color: C.textFaint
+    }
+  }, "kWh")), React.createElement("div", {
     className: "grid grid-cols-3 gap-1.5"
   }, React.createElement("label", {
     className: "flex flex-col gap-0.5"
@@ -5947,6 +6015,89 @@ function GrabProfitMeter() {
     },
     type: "button"
   }, "+ เพิ่มรถอีกคัน")), isFormVehicleEV ? React.createElement(React.Fragment, null, React.createElement("div", {
+    className: "mb-3 rounded-lg p-3",
+    style: {
+      background: C.bgSoft
+    }
+  }, React.createElement("p", {
+    className: "mb-0.5 text-[11px] font-semibold",
+    style: {
+      color: C.text
+    }
+  }, "🔋 แบตเตอรี่ (ชาร์จข้ามวันได้)"), React.createElement("p", {
+    className: "mb-2 text-[10px] leading-relaxed",
+    style: {
+      color: C.textFaint
+    }
+  }, formVehicleCap > 0 ? "กรอก % แบตตอนเริ่มและตอนจบวัน (ก่อนชาร์จ) ระบบจะคิดค่าไฟตามไฟที่ใช้จริงของแต่ละวัน แม้วันนั้นยังไม่ได้ชาร์จ — พอชาร์จครั้งถัดไป จะปรับต้นทุนวันก่อนๆ ให้ตามราคาจริงเอง" : "ตั้งความจุแบตเตอรี่ (kWh) ที่ \"🚗 รถของฉัน\" ก่อน เพื่อใช้คิดค่าไฟแบบชาร์จข้ามวัน (เว้นว่างไว้ถ้าชาร์จทุกวันตามปกติ)"), formVehicleCap > 0 && React.createElement("div", {
+    className: "grid grid-cols-2 gap-2.5"
+  }, React.createElement(Field, {
+    label: "แบตตอนเริ่มวัน",
+    suffix: "%",
+    value: batteryStart,
+    onChange: setBatteryStart,
+    placeholder: "เช่น 80"
+  }), React.createElement(Field, {
+    label: "แบตตอนจบวัน (ก่อนชาร์จ)",
+    suffix: "%",
+    value: batteryEnd,
+    onChange: setBatteryEnd,
+    placeholder: "เช่น 20"
+  })), batteryMode && React.createElement("div", {
+    className: "mt-2.5 flex flex-col gap-1 rounded-lg p-2.5",
+    style: {
+      background: C.panel
+    }
+  }, React.createElement("div", {
+    className: "flex justify-between text-[11px]"
+  }, React.createElement("span", {
+    style: {
+      color: C.textMuted
+    }
+  }, "ใช้ไฟวันนี้ (", batteryStart, "% → ", batteryEnd, "%)"), React.createElement("span", {
+    style: {
+      color: C.text,
+      fontFamily: "'JetBrains Mono', monospace"
+    }
+  }, thb(energyUsedKwh), " kWh")), distanceKm > 0 && React.createElement("div", {
+    className: "flex justify-between text-[11px]"
+  }, React.createElement("span", {
+    style: {
+      color: C.textMuted
+    }
+  }, "วิ่ง ", thb(distanceKm), " กม."), React.createElement("span", {
+    style: {
+      color: C.text,
+      fontFamily: "'JetBrains Mono', monospace"
+    }
+  }, (distanceKm / energyUsedKwh).toFixed(2), " กม./kWh")), React.createElement("div", {
+    className: "flex justify-between text-[11px]"
+  }, React.createElement("span", {
+    style: {
+      color: C.textMuted
+    }
+  }, bChargedKwh > 0 ? "ราคาไฟจากการชาร์จวันนี้" : "ราคาไฟ (ประมาณจากชาร์จล่าสุด)"), React.createElement("span", {
+    style: {
+      color: C.text,
+      fontFamily: "'JetBrains Mono', monospace"
+    }
+  }, thb(Math.round(batteryPriceForDay * 100) / 100), " ฿/kWh")), React.createElement("div", {
+    className: "flex justify-between text-[11px] font-semibold"
+  }, React.createElement("span", {
+    style: {
+      color: C.greenDeep
+    }
+  }, "ค่าไฟของวันนี้"), React.createElement("span", {
+    style: {
+      color: C.greenDeep,
+      fontFamily: "'JetBrains Mono', monospace"
+    }
+  }, thb(batteryDayCost), " ฿")), React.createElement("p", {
+    className: "text-[10px] leading-relaxed",
+    style: {
+      color: "#92400E"
+    }
+  }, bChargedKwh > 0 ? pendingBatteryDays > 0 ? `ชาร์จแล้ววันนี้ — กดบันทึกแล้วระบบจะปรับต้นทุนของ ${pendingBatteryDays} วันก่อนหน้าที่ยังไม่ได้ชาร์จให้ตามราคานี้ด้วย` : "ชาร์จแล้ววันนี้ — ต้นทุนคิดตามไฟที่ใช้จริงของวันนี้" : "ยังไม่ได้ชาร์จ — ใช้ราคาประมาณไปก่อน พอบันทึกวันที่ชาร์จ ระบบจะปรับต้นทุนวันนี้ให้ตรงราคาจริงอัตโนมัติ"))), React.createElement("div", {
     className: "mb-3 rounded-lg p-3",
     style: {
       background: C.bgSoft
@@ -8483,7 +8634,7 @@ function GrabProfitMeter() {
       const oc = e.outsideChargeCost || 0;
       if (e.homeChargeKwh > 0) {
         homeKwh += e.homeChargeKwh;
-        homeCost += Math.max(0, (e.fuelCost || 0) - oc);
+        homeCost += e.homeChargeCostPaid !== undefined ? e.homeChargeCostPaid : Math.max(0, (e.fuelCost || 0) - oc);
         homeDays++;
       }
       if (e.outsideChargeKwh > 0) {
